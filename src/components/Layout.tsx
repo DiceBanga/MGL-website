@@ -8,9 +8,9 @@ const Layout: React.FC = () => {
   const { user, signOut } = useAuthStore();
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
+    <div className="min-h-screen bg-pattern flex flex-col">
       {/* Navigation Bar */}
-      <nav className="bg-black border-b border-green-700">
+      <nav className="bg-black/80 backdrop-blur-sm border-b border-green-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
@@ -84,7 +84,7 @@ const Layout: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="bg-black mt-auto border-t border-green-700/30">
+      <footer className="bg-black/80 backdrop-blur-sm mt-auto border-t border-green-700/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div>
