@@ -29,6 +29,14 @@ import EmailVerification from './pages/auth/EmailVerification';
 import EmailVerificationSuccess from './pages/auth/EmailVerificationSuccess';
 import EmailVerificationFailed from './pages/auth/EmailVerificationFailed';
 
+// Dashboard Pages
+import UserDashboard from './pages/dashboard/UserDashboard';
+import TeamDashboard from './pages/dashboard/TeamDashboard';
+
+// Profile Pages
+import UserProfile from './pages/profile/UserProfile';
+import TeamProfile from './pages/profile/TeamProfile';
+
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminLeagues from './pages/admin/Leagues';
@@ -43,7 +51,7 @@ import AdminSettings from './pages/admin/Settings';
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Layout />}>
+      <Route element={<Layout />}>
         {/* Public Routes */}
         <Route index element={<Home />} />
         <Route path="about" element={<About />} />
@@ -68,6 +76,14 @@ function App() {
         <Route path="email-verification" element={<EmailVerification />} />
         <Route path="email-verification/success" element={<EmailVerificationSuccess />} />
         <Route path="email-verification/failed" element={<EmailVerificationFailed />} />
+
+        {/* Dashboard Routes */}
+        <Route path="dashboard" element={<AuthGuard requireAuth><UserDashboard /></AuthGuard>} />
+        <Route path="team/:teamId/dashboard" element={<AuthGuard requireAuth><TeamDashboard /></AuthGuard>} />
+
+        {/* Profile Routes */}
+        <Route path="user/:userId" element={<UserProfile />} />
+        <Route path="team/:teamId" element={<TeamProfile />} />
 
         {/* Admin Routes */}
         <Route path="admin" element={<AuthGuard requireAuth requireAdmin />}>
