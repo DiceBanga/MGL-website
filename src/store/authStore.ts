@@ -27,14 +27,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     
-    // Check if player profile exists, if not create it
+    // Check if player profile exists
     const { data: profile } = await supabase
       .from('players')
       .select('user_id')
       .eq('user_id', data.user.id)
-      .single();
+      .maybeSingle();
 
     if (!profile) {
+      // Create player profile if it doesn't exist
       await supabase.from('players').insert({
         user_id: data.user.id,
         display_name: email.split('@')[0],
