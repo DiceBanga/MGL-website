@@ -37,10 +37,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!profile) {
       await supabase.from('players').insert({
         user_id: data.user.id,
-        display_name: email.split('@')[0], // Use email username as display name
+        display_name: email.split('@')[0],
         email: email
       });
     }
+
+    set({
+      user: {
+        id: data.user.id,
+        email: data.user.email!,
+        role: data.user.role!
+      }
+    });
   },
 
   signUp: async (email, password) => {
@@ -51,16 +59,28 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Create player profile
       await supabase.from('players').insert({
         user_id: data.user.id,
-        display_name: email.split('@')[0], // Use email username as display name
+        display_name: email.split('@')[0],
         email: email
+      });
+
+      set({
+        user: {
+          id: data.user.id,
+          email: data.user.email!,
+          role: data.user.role!
+        }
       });
     }
   },
 
   signOut: async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    set({ user: null });
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } finally {
+      // Always clear user state, even if signOut fails
+      set({ user: null });
+    }
   },
 
   resetPassword: async (email) => {
@@ -78,8 +98,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   }
 }));
 
+// Initialize auth state
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session?.user) {
+    useAuthStore.getState().setUser({
+      id: session.user.id,
+      email: session.user.email!,
+      role: session.user.role!
+    });
+  }
+  useAuthStore.getState().loading = false;
+});
+
 // Set up auth state listener
-supabase.auth.onAuthStateChange((event, session) => {
+supabase.auth.onAuthStateChange((_event, session) => {
   if (session?.user) {
     useAuthStore.getState().setUser({
       id: session.user.id,
