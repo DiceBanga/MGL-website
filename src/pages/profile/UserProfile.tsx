@@ -5,16 +5,16 @@ import { supabase } from '../../lib/supabase';
 
 interface UserProfile {
   display_name: string;
-  team_name: string | null;
-  games_played: number;
-  win_rate: number;
-  avg_score: number;
+  avatar_url: string | null;
+  bio: string | null;
+  twitter_handle: string | null;
 }
 
 const UserProfile = () => {
   const { userId } = useParams();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [teams, setTeams] = useState<any[]>([]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -23,35 +23,38 @@ const UserProfile = () => {
   const fetchUserProfile = async () => {
     if (!userId) return;
 
-    const { data, error } = await supabase
-      .from('players')
-      .select(`
-        display_name,
-        team_players!inner(
-          teams!inner(
-            name
+    try {
+      // Fetch basic profile info
+      const { data: profileData, error: profileError } = await supabase
+        .from('players')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (profileError) throw profileError;
+
+      // Fetch teams separately
+      const { data: teamData, error: teamError } = await supabase
+        .from('team_players')
+        .select(`
+          team_id,
+          role,
+          teams:team_id (
+            name,
+            logo_url
           )
-        )
-      `)
-      .eq('user_id', userId)
-      .single();
+        `)
+        .eq('user_id', userId);
 
-    if (error) {
+      if (teamError) throw teamError;
+
+      setProfile(profileData);
+      setTeams(teamData);
+    } catch (error) {
       console.error('Error fetching profile:', error);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // For demo purposes, using static stats
-    // In production, these would come from the database
-    setProfile({
-      display_name: data.display_name,
-      team_name: data.team_players[0]?.teams.name || null,
-      games_played: 32,
-      win_rate: 68,
-      avg_score: 86.5
-    });
-    setLoading(false);
   };
 
   if (loading) {
@@ -86,75 +89,88 @@ const UserProfile = () => {
           <div className="lg:col-span-2">
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <div className="flex items-center space-x-4 mb-6">
-                <div className="bg-green-500/10 p-4 rounded-full">
-                  <User2 className="w-8 h-8 text-green-500" />
+                <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                  {profile.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={profile.display_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User2 className="w-12 h-12 text-green-500" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-white">{profile.display_name}</h2>
-                  {profile.team_name && (
-                    <p className="text-gray-400">
-                      Team: {profile.team_name}
-                    </p>
+                  {profile.bio && (
+                    <p className="text-gray-300 mt-1">{profile.bio}</p>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gray-700/50 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <GamepadIcon className="w-5 h-5 text-green-500" />
-                    <span className="text-gray-300">Games Played</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{profile.games_played}</p>
-                </div>
-
-                <div className="bg-gray-700/50 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <Trophy className="w-5 h-5 text-green-500" />
-                    <span className="text-gray-300">Win Rate</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{profile.win_rate}%</p>
-                </div>
-
-                <div className="bg-gray-700/50 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <BarChart2 className="w-5 h-5 text-green-500" />
-                    <span className="text-gray-300">Avg Score</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{profile.avg_score}</p>
+              {/* Teams */}
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Teams</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {teams.map((team) => (
+                    <div
+                      key={team.team_id}
+                      className="bg-gray-700/50 rounded-lg p-4 flex items-center space-x-4"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
+                        {team.teams.logo_url ? (
+                          <img
+                            src={team.teams.logo_url}
+                            alt={team.teams.name}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <Users className="w-6 h-6 text-green-500" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{team.teams.name}</p>
+                        <p className="text-sm text-gray-400">{team.role}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Stats */}
           <div>
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
-              <h2 className="text-xl font-bold text-white mb-6">Recent Activity</h2>
+              <h3 className="text-lg font-semibold text-white mb-4">Statistics</h3>
               <div className="space-y-4">
                 <div className="bg-gray-700/50 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <Trophy className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="text-white">Won Tournament Match</p>
-                        <p className="text-sm text-gray-400">vs LA Knights</p>
-                      </div>
+                      <GamepadIcon className="w-5 h-5 text-green-500" />
+                      <span className="text-gray-300">Games Played</span>
                     </div>
-                    <span className="text-sm text-gray-400">2h ago</span>
+                    <span className="text-white font-semibold">32</span>
                   </div>
                 </div>
 
                 <div className="bg-gray-700/50 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <Users className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="text-white">Joined Team</p>
-                        <p className="text-sm text-gray-400">{profile.team_name}</p>
-                      </div>
+                      <Trophy className="w-5 h-5 text-green-500" />
+                      <span className="text-gray-300">Win Rate</span>
                     </div>
-                    <span className="text-sm text-gray-400">2d ago</span>
+                    <span className="text-white font-semibold">68%</span>
+                  </div>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <BarChart2 className="w-5 h-5 text-green-500" />
+                      <span className="text-gray-300">Average Score</span>
+                    </div>
+                    <span className="text-white font-semibold">86.5</span>
                   </div>
                 </div>
               </div>

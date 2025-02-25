@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, Shield, Trophy, GamepadIcon, BarChart2 } from 'lucide-react';
+import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 
@@ -10,20 +10,46 @@ interface UserProfile {
   phone: string | null;
   timezone: string | null;
   language: string;
+  avatar_url: string | null;
+  bio: string | null;
+  twitter_handle: string | null;
+  twitch_handle: string | null;
+  youtube_handle: string | null;
+  instagram_handle: string | null;
+  discord_handle: string | null;
+}
+
+interface UserStats {
+  games_played: number;
+  win_rate: number;
+  avg_score: number;
+  tournaments_won: number;
+  total_points: number;
+  mvp_count: number;
+}
+
+interface UserTeam {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  role: string;
 }
 
 const UserDashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<UserProfile>({
-    display_name: '',
-    email: '',
-    phone: '',
-    timezone: '',
-    language: 'en'
+  const [stats, setStats] = useState<UserStats>({
+    games_played: 32,
+    win_rate: 68,
+    avg_score: 86.5,
+    tournaments_won: 3,
+    total_points: 1240,
+    mvp_count: 5
   });
+  const [teams, setTeams] = useState<UserTeam[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState<Partial<UserProfile>>({});
 
   useEffect(() => {
     if (!user) {
@@ -32,6 +58,7 @@ const UserDashboard = () => {
     }
     
     fetchUserProfile();
+    fetchUserTeams();
   }, [user, navigate]);
 
   const fetchUserProfile = async () => {
@@ -48,13 +75,39 @@ const UserDashboard = () => {
       return;
     }
 
-    if (data) {
-      setProfile(data);
-      setFormData(data);
-    }
+    setProfile(data);
+    setFormData(data);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const fetchUserTeams = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('team_players')
+      .select(`
+        teams (
+          id,
+          name,
+          logo_url
+        ),
+        role
+      `)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error fetching teams:', error);
+      return;
+    }
+
+    setTeams(data.map(item => ({
+      id: item.teams.id,
+      name: item.teams.name,
+      logo_url: item.teams.logo_url,
+      role: item.role
+    })));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -66,25 +119,17 @@ const UserDashboard = () => {
     
     const { error } = await supabase
       .from('players')
-      .upsert({
-        user_id: user?.id,
-        ...formData
-      });
+      .update(formData)
+      .eq('user_id', user?.id);
 
     if (error) {
       console.error('Error updating profile:', error);
       return;
     }
 
-    setProfile(formData);
+    setProfile(formData as UserProfile);
     setIsEditing(false);
   };
-
-  const stats = [
-    { name: 'Games Played', value: '32', icon: GamepadIcon },
-    { name: 'Win Rate', value: '68%', icon: Trophy },
-    { name: 'Average Score', value: '86.5', icon: BarChart2 },
-  ];
 
   return (
     <div className="bg-gray-900/50 py-12">
@@ -94,7 +139,23 @@ const UserDashboard = () => {
           <div className="lg:col-span-2">
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Profile</h2>
+                <div className="flex items-center space-x-4">
+                  <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center">
+                    {profile?.avatar_url ? (
+                      <img
+                        src={profile.avatar_url}
+                        alt={profile.display_name}
+                        className="w-20 h-20 rounded-full"
+                      />
+                    ) : (
+                      <User2 className="w-12 h-12 text-green-500" />
+                    )}
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">{profile?.display_name}</h2>
+                    <p className="text-gray-400">{profile?.bio || 'No bio set'}</p>
+                  </div>
+                </div>
                 <button
                   onClick={() => setIsEditing(!isEditing)}
                   className="text-green-500 hover:text-green-400"
@@ -112,7 +173,7 @@ const UserDashboard = () => {
                     <input
                       type="text"
                       name="display_name"
-                      value={formData.display_name}
+                      value={formData.display_name || ''}
                       onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                     />
@@ -120,62 +181,69 @@ const UserDashboard = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300">
-                      Email
+                      Bio
                     </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
+                    <textarea
+                      name="bio"
+                      value={formData.bio || ''}
                       onChange={handleInputChange}
+                      rows={3}
                       className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Phone
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone || ''}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    />
-                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Twitter Handle
+                      </label>
+                      <input
+                        type="text"
+                        name="twitter_handle"
+                        value={formData.twitter_handle || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Timezone
-                    </label>
-                    <select
-                      name="timezone"
-                      value={formData.timezone || ''}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    >
-                      <option value="">Select Timezone</option>
-                      <option value="America/New_York">Eastern Time</option>
-                      <option value="America/Chicago">Central Time</option>
-                      <option value="America/Denver">Mountain Time</option>
-                      <option value="America/Los_Angeles">Pacific Time</option>
-                    </select>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Twitch Handle
+                      </label>
+                      <input
+                        type="text"
+                        name="twitch_handle"
+                        value={formData.twitch_handle || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Language
-                    </label>
-                    <select
-                      name="language"
-                      value={formData.language}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Spanish</option>
-                      <option value="fr">French</option>
-                    </select>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        YouTube Handle
+                      </label>
+                      <input
+                        type="text"
+                        name="youtube_handle"
+                        value={formData.youtube_handle || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Instagram Handle
+                      </label>
+                      <input
+                        type="text"
+                        name="instagram_handle"
+                        value={formData.instagram_handle || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
                   </div>
 
                   <div className="flex justify-end space-x-4">
@@ -195,59 +263,179 @@ const UserDashboard = () => {
                   </div>
                 </form>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-green-500/10 p-3 rounded-lg">
-                      <User className="w-6 h-6 text-green-500" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <Mail className="w-5 h-5 text-green-500" />
+                      <span className="text-gray-300">{profile?.email}</span>
                     </div>
-                    <div>
-                      <p className="text-sm text-gray-400">Display Name</p>
-                      <p className="text-white">{profile?.display_name}</p>
-                    </div>
+                    {profile?.phone && (
+                      <div className="flex items-center space-x-3">
+                        <Phone className="w-5 h-5 text-green-500" />
+                        <span className="text-gray-300">{profile.phone}</span>
+                      </div>
+                    )}
+                    {profile?.timezone && (
+                      <div className="flex items-center space-x-3">
+                        <Clock className="w-5 h-5 text-green-500" />
+                        <span className="text-gray-300">{profile.timezone}</span>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-green-500/10 p-3 rounded-lg">
-                      <Shield className="w-6 h-6 text-green-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400">Email</p>
-                      <p className="text-white">{profile?.email}</p>
-                    </div>
+                  <div className="space-y-4">
+                    {profile?.twitter_handle && (
+                      <a
+                        href={`https://twitter.com/${profile.twitter_handle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-3 text-gray-300 hover:text-green-400"
+                      >
+                        <Twitter className="w-5 h-5" />
+                        <span>@{profile.twitter_handle}</span>
+                      </a>
+                    )}
+                    {profile?.twitch_handle && (
+                      <a
+                        href={`https://twitch.tv/${profile.twitch_handle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-3 text-gray-300 hover:text-green-400"
+                      >
+                        <Twitch className="w-5 h-5" />
+                        <span>{profile.twitch_handle}</span>
+                      </a>
+                    )}
+                    {profile?.youtube_handle && (
+                      <a
+                        href={`https://youtube.com/@${profile.youtube_handle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-3 text-gray-300 hover:text-green-400"
+                      >
+                        <Youtube className="w-5 h-5" />
+                        <span>{profile.youtube_handle}</span>
+                      </a>
+                    )}
+                    {profile?.instagram_handle && (
+                      <a
+                        href={`https://instagram.com/${profile.instagram_handle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-3 text-gray-300 hover:text-green-400"
+                      >
+                        <Instagram className="w-5 h-5" />
+                        <span>@{profile.instagram_handle}</span>
+                      </a>
+                    )}
                   </div>
-
-                  {profile?.phone && (
-                    <div className="flex items-center space-x-4">
-                      <div className="bg-green-500/10 p-3 rounded-lg">
-                        <Phone className="w-6 h-6 text-green-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Phone</p>
-                        <p className="text-white">{profile.phone}</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
+            </div>
+
+            {/* Teams Section */}
+            <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+              <h2 className="text-xl font-bold text-white mb-6">My Teams</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {teams.map((team) => (
+                  <div
+                    key={team.id}
+                    className="bg-gray-700/50 rounded-lg p-4 flex items-center justify-between"
+                  >
+                    <div className="flex items-center space-x-4">
+                      {team.logo_url ? (
+                        <img
+                          src={team.logo_url}
+                          alt={team.name}
+                          className="w-12 h-12 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
+                          <Users className="w-6 h-6 text-green-500" />
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="text-white font-medium">{team.name}</h3>
+                        <p className="text-sm text-gray-400">{team.role}</p>
+                      </div>
+                    </div>
+                    <button className="text-green-500 hover:text-green-400">
+                      View Team →
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
           {/* Stats Section */}
-          <div>
+          <div className="space-y-8">
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <h2 className="text-xl font-bold text-white mb-6">Statistics</h2>
-              <div className="space-y-4">
-                {stats.map((stat) => (
-                  <div key={stat.name} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-green-500/10 p-2 rounded-lg">
-                        <stat.icon className="w-5 h-5 text-green-500" />
-                      </div>
-                      <span className="text-gray-300">{stat.name}</span>
-                    </div>
-                    <span className="text-white font-semibold">{stat.value}</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <GamepadIcon className="w-5 h-5 text-green-500" />
+                    <span className="text-2xl font-bold text-white">{stats.games_played}</span>
                   </div>
-                ))}
+                  <p className="text-sm text-gray-400">Games Played</p>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <Trophy className="w-5 h-5 text-green-500" />
+                    <span className="text-2xl font-bold text-white">{stats.win_rate}%</span>
+                  </div>
+                  <p className="text-sm text-gray-400">Win Rate</p>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <BarChart2 className="w-5 h-5 text-green-500" />
+                    <span className="text-2xl font-bold text-white">{stats.avg_score}</span>
+                  </div>
+                  <p className="text-sm text-gray-400">Avg Score</p>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <Trophy className="w-5 h-5 text-green-500" />
+                    <span className="text-2xl font-bold text-white">{stats.tournaments_won}</span>
+                  </div>
+                  <p className="text-sm text-gray-400">Tournaments Won</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+              <h2 className="text-xl font-bold text-white mb-6">Recent Activity</h2>
+              <div className="space-y-4">
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Trophy className="w-5 h-5 text-green-500" />
+                      <div>
+                        <p className="text-white">Won Tournament Match</p>
+                        <p className="text-sm text-gray-400">vs LA Knights</p>
+                      </div>
+                    </div>
+                    <span className="text-sm text-gray-400">2h ago</span>
+                  </div>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Users className="w-5 h-5 text-green-500" />
+                      <div>
+                        <p className="text-white">Joined Team</p>
+                        <p className="text-sm text-gray-400">NYC Dragons</p>
+                      </div>
+                    </div>
+                    <span className="text-sm text-gray-400">2d ago</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
