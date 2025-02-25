@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock } from 'lucide-react';
+import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock, Plus, Camera, X } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 
@@ -50,6 +50,11 @@ const UserDashboard = () => {
   const [teams, setTeams] = useState<UserTeam[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<UserProfile>>({});
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [newTeam, setNewTeam] = useState({ name: '', description: '' });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user) {
@@ -107,6 +112,86 @@ const UserDashboard = () => {
     })));
   };
 
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploading(true);
+    try {
+      // Upload to storage
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update profile
+      const { error: updateError } = await supabase
+        .from('players')
+        .update({
+          avatar_url: publicUrl,
+          avatar_upload_path: filePath
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Update local state
+      setProfile(prev => prev ? { ...prev, avatar_url: publicUrl } : null);
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleCreateTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('teams')
+        .insert({
+          name: newTeam.name,
+          description: newTeam.description,
+          captain_id: user.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Add captain as team member
+      await supabase
+        .from('team_players')
+        .insert({
+          team_id: data.id,
+          user_id: user.id,
+          role: 'captain'
+        });
+
+      // Refresh teams
+      fetchUserTeams();
+      setIsCreatingTeam(false);
+      setNewTeam({ name: '', description: '' });
+    } catch (error) {
+      console.error('Error creating team:', error);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
@@ -140,17 +225,35 @@ const UserDashboard = () => {
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center space-x-4">
-                  <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center">
+                  <div 
+                    className="relative w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center cursor-pointer group"
+                    onClick={handleAvatarClick}
+                  >
                     {profile?.avatar_url ? (
                       <img
                         src={profile.avatar_url}
                         alt={profile.display_name}
-                        className="w-20 h-20 rounded-full"
+                        className="w-20 h-20 rounded-full object-cover"
                       />
                     ) : (
                       <User2 className="w-12 h-12 text-green-500" />
                     )}
+                    <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Camera className="w-6 h-6 text-white" />
+                    </div>
+                    {isUploading && (
+                      <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                      </div>
+                    )}
                   </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                  />
                   <div>
                     <h2 className="text-2xl font-bold text-white">{profile?.display_name}</h2>
                     <p className="text-gray-400">{profile?.bio || 'No bio set'}</p>
@@ -335,7 +438,62 @@ const UserDashboard = () => {
 
             {/* Teams Section */}
             <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
-              <h2 className="text-xl font-bold text-white mb-6">My Teams</h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-white">My Teams</h2>
+                <button
+                  onClick={() => setIsCreatingTeam(true)}
+                  className="flex items-center space-x-2 text-green-500 hover:text-green-400"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Create Team</span>
+                </button>
+              </div>
+
+              {isCreatingTeam ? (
+                <form onSubmit={handleCreateTeam} className="bg-gray-700/50 rounded-lg p-4 mb-4">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        Team Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newTeam.name}
+                        onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
+                        className="w-full rounded-md border-gray-700 bg-gray-600 text-white"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        Description
+                      </label>
+                      <textarea
+                        value={newTeam.description}
+                        onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
+                        className="w-full rounded-md border-gray-700 bg-gray-600 text-white"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingTeam(false)}
+                        className="px-4 py-2 text-gray-300 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                      >
+                        Create Team
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              ) : null}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {teams.map((team) => (
                   <div
@@ -359,8 +517,11 @@ const UserDashboard = () => {
                         <p className="text-sm text-gray-400">{team.role}</p>
                       </div>
                     </div>
-                    <button className="text-green-500 hover:text-green-400">
-                      View Team →
+                    <button 
+                      onClick={() => navigate(`/team/${team.id}/dashboard`)}
+                      className="text-green-500 hover:text-green-400"
+                    >
+                      Manage →
                     </button>
                   </div>
                 ))}
