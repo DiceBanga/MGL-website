@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Users, Trophy, Calendar, Settings, Plus, Trash2 } from 'lucide-react';
+import { Users, Trophy, Calendar, Settings, Plus, Trash2, User2, Globe, Mail } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 
