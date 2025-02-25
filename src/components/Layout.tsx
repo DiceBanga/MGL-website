@@ -1,11 +1,42 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare } from 'lucide-react';
+import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../lib/supabase';
+
+interface UserProfile {
+  display_name: string;
+  avatar_url: string | null;
+}
 
 const Layout: React.FC = () => {
   const location = useLocation();
   const { user, signOut } = useAuthStore();
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserProfile();
+    }
+  }, [user]);
+
+  const fetchUserProfile = async () => {
+    const { data, error } = await supabase
+      .from('players')
+      .select('display_name, avatar_url')
+      .eq('user_id', user?.id)
+      .single();
+
+    if (!error && data) {
+      setUserProfile(data);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setShowDropdown(false);
+  };
 
   return (
     <div className="min-h-screen bg-pattern flex flex-col">
@@ -52,17 +83,51 @@ const Layout: React.FC = () => {
             </div>
             <div className="flex items-center space-x-4">
               {user ? (
-                <>
-                  <Link to="/dashboard" className="text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium">
-                    Dashboard
-                  </Link>
+                <div className="relative">
                   <button
-                    onClick={() => signOut()}
-                    className="text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium"
+                    onClick={() => setShowDropdown(!showDropdown)}
+                    className="flex items-center space-x-3 text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium"
                   >
-                    Sign Out
+                    <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
+                      {userProfile?.avatar_url ? (
+                        <img
+                          src={userProfile.avatar_url}
+                          alt={userProfile.display_name}
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <User2 className="w-5 h-5 text-green-500" />
+                      )}
+                    </div>
+                    <span>{userProfile?.display_name || 'User'}</span>
                   </button>
-                </>
+
+                  {showDropdown && (
+                    <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
+                      <Link
+                        to="/dashboard"
+                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                        onClick={() => setShowDropdown(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <Link
+                        to={`/user/${user.id}`}
+                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                        onClick={() => setShowDropdown(false)}
+                      >
+                        Profile
+                      </Link>
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                      >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <>
                   <Link to="/login" className="text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium">
