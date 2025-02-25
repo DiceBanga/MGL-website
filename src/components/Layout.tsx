@@ -26,10 +26,28 @@ const Layout: React.FC = () => {
       .from('players')
       .select('display_name, avatar_url')
       .eq('user_id', user?.id)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
       setUserProfile(data);
+    } else {
+      // If no profile exists, create one with default values
+      const defaultProfile = {
+        display_name: user?.email?.split('@')[0] || 'User',
+        avatar_url: null
+      };
+      
+      const { error: insertError } = await supabase
+        .from('players')
+        .insert({
+          user_id: user?.id,
+          display_name: defaultProfile.display_name,
+          email: user?.email
+        });
+
+      if (!insertError) {
+        setUserProfile(defaultProfile);
+      }
     }
   };
 
@@ -41,7 +59,7 @@ const Layout: React.FC = () => {
   return (
     <div className="min-h-screen bg-pattern flex flex-col">
       {/* Navigation Bar */}
-      <nav className="bg-black/80 backdrop-blur-sm border-b border-green-700">
+      <nav className="bg-black/80 backdrop-blur-sm border-b border-green-700 relative z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
@@ -103,29 +121,35 @@ const Layout: React.FC = () => {
                   </button>
 
                   {showDropdown && (
-                    <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
-                      <Link
-                        to="/dashboard"
-                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40"
                         onClick={() => setShowDropdown(false)}
-                      >
-                        Dashboard
-                      </Link>
-                      <Link
-                        to={`/user/${user.id}`}
-                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-                        onClick={() => setShowDropdown(false)}
-                      >
-                        Profile
-                      </Link>
-                      <button
-                        onClick={handleSignOut}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
-                      >
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Sign Out
-                      </button>
-                    </div>
+                      ></div>
+                      <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
+                        <Link
+                          to="/dashboard"
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          Dashboard
+                        </Link>
+                        <Link
+                          to={`/user/${user.id}`}
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          Profile
+                        </Link>
+                        <button
+                          onClick={handleSignOut}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                        >
+                          <LogOut className="w-4 h-4 mr-2" />
+                          Sign Out
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               ) : (

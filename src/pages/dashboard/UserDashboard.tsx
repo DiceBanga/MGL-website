@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock, Plus, Camera, X } from 'lucide-react';
+import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock, Plus, Camera, X, Search } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 
@@ -35,6 +35,14 @@ interface UserTeam {
   role: string;
 }
 
+interface AvailableTeam {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  description: string | null;
+  member_count: number;
+}
+
 const UserDashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -55,6 +63,10 @@ const UserDashboard = () => {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showTeamBrowser, setShowTeamBrowser] = useState(false);
+  const [availableTeams, setAvailableTeams] = useState<AvailableTeam[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isJoining, setIsJoining] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -111,6 +123,39 @@ const UserDashboard = () => {
       role: item.role
     })));
   };
+
+  const fetchAvailableTeams = async () => {
+    const { data, error } = await supabase
+      .from('teams')
+      .select(`
+        id,
+        name,
+        logo_url,
+        description,
+        team_players (count)
+      `)
+      .ilike('name', `%${searchQuery}%`)
+      .not('team_players.user_id', 'eq', user?.id);
+
+    if (error) {
+      console.error('Error fetching available teams:', error);
+      return;
+    }
+
+    setAvailableTeams(data.map(team => ({
+      id: team.id,
+      name: team.name,
+      logo_url: team.logo_url,
+      description: team.description,
+      member_count: team.team_players[0].count
+    })));
+  };
+
+  useEffect(() => {
+    if (showTeamBrowser) {
+      fetchAvailableTeams();
+    }
+  }, [showTeamBrowser, searchQuery]);
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click();
@@ -192,6 +237,31 @@ const UserDashboard = () => {
     }
   };
 
+  const handleJoinTeam = async (teamId: string) => {
+    if (!user) return;
+    setIsJoining(teamId);
+
+    try {
+      const { error } = await supabase
+        .from('team_players')
+        .insert({
+          team_id: teamId,
+          user_id: user.id,
+          role: 'player'
+        });
+
+      if (error) throw error;
+
+      // Refresh teams list
+      fetchUserTeams();
+      setShowTeamBrowser(false);
+    } catch (error) {
+      console.error('Error joining team:', error);
+    } finally {
+      setIsJoining(null);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
@@ -215,6 +285,75 @@ const UserDashboard = () => {
     setProfile(formData as UserProfile);
     setIsEditing(false);
   };
+
+  const TeamBrowser = () => (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-white">Browse Teams</h3>
+          <button
+            onClick={() => setShowTeamBrowser(false)}
+            className="text-gray-400 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="relative mb-6">
+          <input
+            type="text"
+            placeholder="Search teams..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-gray-700 border-gray-600 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-400"
+          />
+          <Search className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+        </div>
+
+        <div className="space-y-4">
+          {availableTeams.map((team) => (
+            <div
+              key={team.id}
+              className="bg-gray-700/50 rounded-lg p-4 flex items-center justify-between"
+            >
+              <div className="flex items-center space-x-4">
+                {team.logo_url ? (
+                  <img
+                    src={team.logo_url}
+                    alt={team.name}
+                    className="w-12 h-12 rounded-full"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
+                    <Users className="w-6 h-6 text-green-500" />
+                  </div>
+                )}
+                <div>
+                  <h4 className="text-white font-medium">{team.name}</h4>
+                  <p className="text-sm text-gray-400">
+                    {team.description || 'No description available'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {team.member_count} members
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleJoinTeam(team.id)}
+                disabled={isJoining === team.id}
+                className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isJoining === team.id ? 'Joining...' : 'Join Team'}
+              </button>
+            </div>
+          ))}
+          {availableTeams.length === 0 && (
+            <p className="text-center text-gray-400">No teams found</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="bg-gray-900/50 py-12">
@@ -440,13 +579,22 @@ const UserDashboard = () => {
             <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-white">My Teams</h2>
-                <button
-                  onClick={() => setIsCreatingTeam(true)}
-                  className="flex items-center space-x-2 text-green-500 hover:text-green-400"
-                >
-                  <Plus className="w-5 h-5" />
-                  <span>Create Team</span>
-                </button>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => setShowTeamBrowser(true)}
+                    className="flex items-center space-x-2 text-green-500 hover:text-green-400"
+                  >
+                    <Users className="w-5 h-5" />
+                    <span>Join Team</span>
+                  </button>
+                  <button
+                    onClick={() => setIsCreatingTeam(true)}
+                    className="flex items-center space-x-2 text-green-500 hover:text-green-400"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span>Create Team</span>
+                  </button>
+                </div>
               </div>
 
               {isCreatingTeam ? (
@@ -602,6 +750,8 @@ const UserDashboard = () => {
           </div>
         </div>
       </div>
+
+      {showTeamBrowser && <TeamBrowser />}
     </div>
   );
 };
