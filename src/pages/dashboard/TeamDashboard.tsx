@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Users, Trophy, Calendar, Settings, Plus, Trash2, User2, Globe, Mail, AlertTriangle } from 'lucide-react';
+import { Users, Trophy, Calendar, Settings, Plus, Trash2, User2, Globe, Mail, AlertTriangle, Check, X, DollarSign } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 
@@ -10,6 +10,7 @@ interface TeamMember {
   role: string;
   jersey_number: number | null;
   can_be_deleted: boolean;
+  avatar_url?: string | null;
 }
 
 interface JoinRequest {
@@ -30,11 +31,43 @@ interface Team {
   captain_id: string;
 }
 
+interface Tournament {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+  prize_pool: string;
+}
+
+interface League {
+  id: string;
+  name: string;
+  current_season: number;
+  status: string;
+}
+
+interface Registration {
+  id: string;
+  name: string;
+  type: 'tournament' | 'league';
+  status: string;
+  date: string;
+  roster: TeamMember[];
+}
+
 interface DeleteConfirmation {
   type: 'disband' | 'transfer';
   show: boolean;
   targetId?: string;
   step: 1 | 2;
+}
+
+interface RegistrationModal {
+  show: boolean;
+  type: 'tournament' | 'league';
+  id: string;
+  name: string;
 }
 
 const TeamDashboard = () => {
@@ -53,6 +86,19 @@ const TeamDashboard = () => {
     show: false,
     step: 1
   });
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [registrationType, setRegistrationType] = useState<'tournament' | 'league'>('tournament');
+  const [availableTournaments, setAvailableTournaments] = useState<Tournament[]>([]);
+  const [availableLeagues, setAvailableLeagues] = useState<League[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<string>('');
+  const [selectedEventName, setSelectedEventName] = useState<string>('');
+  const [selectedPlayers, setSelectedPlayers] = useState<TeamMember[]>([]);
+  const [availableRosterPlayers, setAvailableRosterPlayers] = useState<TeamMember[]>([]);
+  const [showPaymentSimulation, setShowPaymentSimulation] = useState(false);
+  const [processingPayment, setProcessingPayment] = useState(false);
+  const [captain, setCaptain] = useState<TeamMember | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -62,6 +108,22 @@ const TeamDashboard = () => {
 
     fetchTeamData();
   }, [user, teamId, navigate]);
+
+  useEffect(() => {
+    if (isCaptain) {
+      fetchAvailableEvents();
+      fetchTeamRegistrations();
+    }
+  }, [isCaptain, teamId]);
+
+  useEffect(() => {
+    if (members.length > 0) {
+      const captainMember = members.find(member => member.role === 'captain');
+      if (captainMember) {
+        setCaptain(captainMember);
+      }
+    }
+  }, [members]);
 
   const fetchTeamData = async () => {
     if (!teamId) return;
@@ -91,7 +153,8 @@ const TeamDashboard = () => {
         jersey_number,
         can_be_deleted,
         players!inner (
-          display_name
+          display_name,
+          avatar_url
         )
       `)
       .eq('team_id', teamId);
@@ -106,7 +169,8 @@ const TeamDashboard = () => {
       display_name: member.players.display_name,
       role: member.role,
       jersey_number: member.jersey_number,
-      can_be_deleted: member.can_be_deleted
+      can_be_deleted: member.can_be_deleted,
+      avatar_url: member.players.avatar_url
     })));
 
     // Fetch join requests if captain
@@ -135,6 +199,112 @@ const TeamDashboard = () => {
         })));
       }
     }
+  };
+
+  const fetchAvailableEvents = async () => {
+    // Fetch available tournaments
+    const { data: tournamentsData, error: tournamentsError } = await supabase
+      .from('tournaments')
+      .select('id, name, status')
+      .eq('status', 'registration')
+      .order('name');
+
+    if (tournamentsError) {
+      console.error('Error fetching tournaments:', tournamentsError);
+    } else {
+      setAvailableTournaments(tournamentsData || []);
+    }
+
+    // Fetch available leagues
+    const { data: leaguesData, error: leaguesError } = await supabase
+      .from('leagues')
+      .select('id, name, status')
+      .eq('status', 'active')
+      .order('name');
+
+    if (leaguesError) {
+      console.error('Error fetching leagues:', leaguesError);
+    } else {
+      setAvailableLeagues(leaguesData || []);
+    }
+  };
+
+  const fetchTeamRegistrations = async () => {
+    if (!teamId) return;
+
+    // Fetch tournament registrations
+    const { data: tournamentRegs, error: tournamentError } = await supabase
+      .from('tournament_registrations')
+      .select(`
+        id,
+        status,
+        registration_date,
+        tournaments:tournament_id(name),
+        tournament_rosters(
+          player_id,
+          players:player_id(display_name, avatar_url)
+        )
+      `)
+      .eq('team_id', teamId);
+
+    if (tournamentError) {
+      console.error('Error fetching tournament registrations:', tournamentError);
+    }
+
+    // Fetch league registrations
+    const { data: leagueRegs, error: leagueError } = await supabase
+      .from('league_registrations')
+      .select(`
+        id,
+        status,
+        registration_date,
+        leagues:league_id(name),
+        league_rosters(
+          player_id,
+          players:player_id(display_name, avatar_url)
+        )
+      `)
+      .eq('team_id', teamId);
+
+    if (leagueError) {
+      console.error('Error fetching league registrations:', leagueError);
+    }
+
+    // Combine and format registrations
+    const formattedRegistrations: Registration[] = [
+      ...(tournamentRegs || []).map(reg => ({
+        id: reg.id,
+        name: reg.tournaments.name,
+        type: 'tournament' as const,
+        status: reg.status,
+        date: new Date(reg.registration_date).toLocaleDateString(),
+        roster: reg.tournament_rosters.map(roster => ({
+          id: roster.player_id,
+          display_name: roster.players.display_name,
+          role: 'player',
+          jersey_number: null,
+          can_be_deleted: false,
+          avatar_url: roster.players.avatar_url
+        }))
+      })),
+      ...(leagueRegs || []).map(reg => ({
+        id: reg.id,
+        name: reg.leagues.name,
+        type: 'league' as const,
+        status: reg.status,
+        date: new Date(reg.registration_date).toLocaleDateString(),
+        roster: reg.league_rosters.map(roster => ({
+          id: roster.player_id,
+          display_name: roster.players.display_name,
+          role: 'player',
+          jersey_number: null,
+          can_be_deleted: false,
+          avatar_url: roster.players.avatar_url
+        }))
+      }))
+    ];
+
+    setRegistrations(formattedRegistrations);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,19 +394,23 @@ const TeamDashboard = () => {
   };
 
   const handleTransferOwnership = async (newCaptainId: string) => {
-    const { error } = await supabase.rpc('transfer_team_ownership', {
-      p_team_id: teamId,
-      p_new_captain_id: newCaptainId
-    });
+    try {
+      const { error } = await supabase.rpc('transfer_team_ownership', {
+        p_team_id: teamId,
+        p_new_captain_id: newCaptainId
+      });
 
-    if (error) {
-      console.error('Error transferring ownership:', error);
-      return;
+      if (error) {
+        console.error('Error transferring ownership:', error);
+        return;
+      }
+
+      // Refresh data
+      fetchTeamData();
+      setDeleteConfirmation({ type: 'transfer', show: false, step: 1 });
+    } catch (err) {
+      console.error('Error transferring ownership:', err);
     }
-
-    // Refresh data
-    fetchTeamData();
-    setDeleteConfirmation({ type: 'transfer', show: false, step: 1 });
   };
 
   const handleDisbandTeam = async () => {
@@ -253,6 +427,129 @@ const TeamDashboard = () => {
     }
 
     navigate('/dashboard');
+  };
+
+  const handleRegistrationClick = (type: 'tournament' | 'league') => {
+    setRegistrationType(type);
+    setSelectedEvent('');
+    setSelectedEventName('');
+    setSelectedPlayers([]);
+    setAvailableRosterPlayers([...members]);
+    
+    // Pre-select captain
+    if (captain) {
+      setSelectedPlayers([captain]);
+      setAvailableRosterPlayers(members.filter(m => m.id !== captain.id));
+    }
+    
+    setShowRegistrationForm(true);
+  };
+
+  const handleEventSelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const eventId = e.target.value;
+    setSelectedEvent(eventId);
+    
+    if (eventId) {
+      // Find event name
+      if (registrationType === 'tournament') {
+        const tournament = availableTournaments.find(t => t.id === eventId);
+        if (tournament) setSelectedEventName(tournament.name);
+      } else {
+        const league = availableLeagues.find(l => l.id === eventId);
+        if (league) setSelectedEventName(league.name);
+      }
+    } else {
+      setSelectedEventName('');
+    }
+  };
+
+  const handlePlayerSelection = (player: TeamMember) => {
+    // Maximum 5 players
+    if (selectedPlayers.length >= 5 && !selectedPlayers.some(p => p.id === player.id)) {
+      return;
+    }
+
+    // If player is already selected, remove them
+    if (selectedPlayers.some(p => p.id === player.id)) {
+      setSelectedPlayers(selectedPlayers.filter(p => p.id !== player.id));
+      setAvailableRosterPlayers([...availableRosterPlayers, player]);
+    } else {
+      // Add player to selected list
+      setSelectedPlayers([...selectedPlayers, player]);
+      setAvailableRosterPlayers(availableRosterPlayers.filter(p => p.id !== player.id));
+    }
+  };
+
+  const handleRemoveSelectedPlayer = (playerId: string) => {
+    // Don't allow removing captain
+    if (captain && captain.id === playerId) {
+      return;
+    }
+
+    const playerToRemove = selectedPlayers.find(p => p.id === playerId);
+    if (playerToRemove) {
+      setSelectedPlayers(selectedPlayers.filter(p => p.id !== playerId));
+      setAvailableRosterPlayers([...availableRosterPlayers, playerToRemove]);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!teamId || !selectedEvent || selectedPlayers.length !== 5) return;
+
+    setIsRegistering(true);
+    
+    try {
+      // Simulate registration process
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Show payment simulation
+      setShowRegistrationForm(false);
+      setShowPaymentSimulation(true);
+    } catch (error) {
+      console.error('Error during registration:', error);
+      setIsRegistering(false);
+    }
+  };
+
+  const handlePaymentSimulation = async () => {
+    setProcessingPayment(true);
+    
+    try {
+      // Simulate payment processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Complete registration based on type
+      if (registrationType === 'tournament') {
+        const { error } = await supabase.rpc('register_for_tournament', {
+          p_tournament_id: selectedEvent,
+          p_team_id: teamId,
+          p_player_ids: selectedPlayers.map(p => p.id)
+        });
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.rpc('register_for_league', {
+          p_league_id: selectedEvent,
+          p_team_id: teamId,
+          p_season: 1, // Default to season 1
+          p_player_ids: selectedPlayers.map(p => p.id)
+        });
+
+        if (error) throw error;
+      }
+      
+      // Refresh registrations
+      await fetchTeamRegistrations();
+      
+      // Reset state
+      setShowPaymentSimulation(false);
+      setProcessingPayment(false);
+      setSelectedEvent('');
+      setSelectedPlayers([]);
+    } catch (error) {
+      console.error('Error completing registration:', error);
+      setProcessingPayment(false);
+    }
   };
 
   if (!isCaptain) {
@@ -470,8 +767,16 @@ const TeamDashboard = () => {
                     className="flex items-center justify-between bg-gray-700/50 p-4 rounded-lg"
                   >
                     <div className="flex items-center space-x-4">
-                      <div className="bg-green-500/10 p-2 rounded-full">
-                        <User2 className="w-5 h-5 text-green-500" />
+                      <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                        {member.avatar_url ? (
+                          <img
+                            src={member.avatar_url}
+                            alt={member.display_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User2 className="w-5 h-5 text-green-500" />
+                        )}
                       </div>
                       <div>
                         <p className="text-white">{member.display_name}</p>
@@ -507,6 +812,220 @@ const TeamDashboard = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Registrations Section */}
+            <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-white">Registrations</h2>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => handleRegistrationClick('tournament')}
+                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
+                  >
+                    <Trophy className="w-5 h-5 mr-2" />
+                    Join Tournament
+                  </button>
+                  <button
+                    onClick={() => handleRegistrationClick('league')}
+                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
+                  >
+                    <Calendar className="w-5 h-5 mr-2" />
+                    Join League
+                  </button>
+                </div>
+              </div>
+
+              {showRegistrationForm ? (
+                <div className="bg-gray-700/50 rounded-lg p-6 mb-6">
+                  <h3 className="text-xl font-bold text-white mb-4">
+                    Register for {registrationType === 'tournament' ? 'Tournament' : 'League'}
+                  </h3>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Select {registrationType === 'tournament' ? 'Tournament' : 'League'}
+                      </label>
+                      <select
+                        value={selectedEvent}
+                        onChange={handleEventSelection}
+                        className="w-full bg-gray-600 border-gray-700 rounded-md text-white p-2"
+                      >
+                        <option value="">Select...</option>
+                        {registrationType === 'tournament'
+                          ? availableTournaments.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))
+                          : availableLeagues.map((l) => (
+                              <option key={l.id} value={l.id}>{l.name}</option>
+                            ))
+                        }
+                      </select>
+                    </div>
+                    
+                    {selectedEvent && (
+                      <>
+                        <div>
+                          <h4 className="text-lg font-medium text-white mb-3">Team Members (5)</h4>
+                          <div className="space-y-2">
+                            {selectedPlayers.map((player, index) => (
+                              <div key={player.id} className="flex items-center justify-between bg-gray-600/70 p-3 rounded-lg">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                                    {player.avatar_url ? (
+                                      <img
+                                        src={player.avatar_url}
+                                        alt={player.display_name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <User2 className="w-5 h-5 text-green-500" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="text-white">{player.display_name}</p>
+                                    <p className="text-xs text-gray-400">
+                                      {index === 0 ? 'Captain' : `Player ${index}`}
+                                    </p>
+                                  </div>
+                                </div>
+                                {index !== 0 && (
+                                  <button
+                                    onClick={() => handleRemoveSelectedPlayer(player.id)}
+                                    className="text-red-400 hover:text-red-300"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            
+                            {/* Empty slots */}
+                            {Array.from({ length: Math.max(0, 5 - selectedPlayers.length) }).map((_, index) => (
+                              <div key={`empty-${index}`} className="flex items-center justify-between bg-gray-600/30 p-3 rounded-lg border border-dashed border-gray-500">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-10 h-10 rounded-full bg-gray-700/50 flex items-center justify-center">
+                                    <User2 className="w-5 h-5 text-gray-500" />
+                                  </div>
+                                  <p className="text-gray-400">Select a player</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <h4 className="text-lg font-medium text-white mb-3">Available Players</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                            {availableRosterPlayers.map((player) => (
+                              <div
+                                key={player.id}
+                                onClick={() => handlePlayerSelection(player)}
+                                className="flex items-center space-x-3 bg-gray-600/50 p-3 rounded-lg cursor-pointer hover:bg-gray-500/50"
+                              >
+                                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                                  {player.avatar_url ? (
+                                    <img
+                                      src={player.avatar_url}
+                                      alt={player.display_name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <User2 className="w-5 h-5 text-green-500" />
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-white">{player.display_name}</p>
+                                  <p className="text-xs text-gray-400">{player.role}</p>
+                                </div>
+                              </div>
+                            ))}
+                            
+                            {availableRosterPlayers.length === 0 && (
+                              <p className="text-gray-400 col-span-2 text-center py-4">No more players available</p>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-end space-x-4">
+                          <button
+                            onClick={() => setShowRegistrationForm(false)}
+                            className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleRegister}
+                            disabled={selectedPlayers.length !== 5 || isRegistering}
+                            className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                          >
+                            {isRegistering ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                Registering...
+                              </>
+                            ) : (
+                              'Register'
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {registrations.length > 0 ? (
+                    registrations.map((reg) => (
+                      <div
+                        key={reg.id}
+                        className="bg-gray-700/50 rounded-lg p-4"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h3 className="text-white font-medium">{reg.name}</h3>
+                            <p className="text-sm text-gray-400">
+                              {reg.type === 'tournament' ? 'Tournament' : 'League'} • {reg.status}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-4">
+                            <button className="text-green-500 hover:text-green-400">
+                              View Details
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-4">
+                          <p className="text-sm text-gray-400 mb-2">Roster:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {reg.roster.map((player) => (
+                              <div
+                                key={player.id}
+                                className="flex items-center space-x-2 bg-gray-600/50 px-3 py-1 rounded-full"
+                              >
+                                <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                                  {player.avatar_url ? (
+                                    <img
+                                      src={player.avatar_url}
+                                      alt={player.display_name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <User2 className="w-3 h-3 text-green-500" />
+                                  )}
+                                </div>
+                                <span className="text-sm text-white">{player.display_name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-400 text-center py-4">No registrations yet. Register for tournaments or leagues to compete!</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -653,6 +1172,65 @@ const TeamDashboard = () => {
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+       {/* Payment {/* Payment Simulation Modal */}
+      {showPaymentSimulation && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <div className="text-center">
+              <DollarSign className="w-12 h-12 text-green-500 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-white mb-2">Payment Required</h3>
+              <p className="text-gray-300 mb-6">
+                To complete your registration for <span className="text-green-500 font-medium">{selectedEventName}</span>, a registration fee is required.
+              </p>
+              
+              <div className="bg-gray-700 rounded-lg p-4 mb-6">
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-300">Registration Fee:</span>
+                  <span className="text-white font-medium">$50.00</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-300">Processing Fee:</span>
+                  <span className="text-white font-medium">$2.50</span>
+                </div>
+                <div className="border-t border-gray-600 my-2"></div>
+                <div className="flex justify-between font-bold">
+                  <span className="text-gray-300">Total:</span>
+                  <span className="text-green-500">$52.50</span>
+                </div>
+              </div>
+              
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={() => {
+                    setShowPaymentSimulation(false);
+                    setSelectedEvent('');
+                    setSelectedPlayers([]);
+                  }}
+                  className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                  disabled={processingPayment}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePaymentSimulation}
+                  disabled={processingPayment}
+                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {processingPayment ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    'Complete Payment'
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
