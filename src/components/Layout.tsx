@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, Outlet } from 'react-router-dom';
-import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut } from 'lucide-react';
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
+import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut, Settings } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
 
@@ -11,6 +11,7 @@ interface UserProfile {
 
 const Layout: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuthStore();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -18,10 +19,17 @@ const Layout: React.FC = () => {
   useEffect(() => {
     if (user) {
       fetchUserProfile();
+      
+      // Redirect admin users to admin dashboard if they're trying to access user dashboard
+      if (user.role === 'admin' && location.pathname === '/dashboard') {
+        navigate('/admin');
+      }
     }
-  }, [user]);
+  }, [user, location.pathname, navigate]);
 
   const fetchUserProfile = async () => {
+    if (!user) return;
+    
     const { data, error } = await supabase
       .from('players')
       .select('display_name, avatar_url')
@@ -127,13 +135,24 @@ const Layout: React.FC = () => {
                         onClick={() => setShowDropdown(false)}
                       ></div>
                       <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
-                        <Link
-                          to="/dashboard"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-                          onClick={() => setShowDropdown(false)}
-                        >
-                          Dashboard
-                        </Link>
+                        {user.role === 'admin' ? (
+                          <Link
+                            to="/admin"
+                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                            onClick={() => setShowDropdown(false)}
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            Admin Panel
+                          </Link>
+                        ) : (
+                          <Link
+                            to="/dashboard"
+                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                            onClick={() => setShowDropdown(false)}
+                          >
+                            Dashboard
+                          </Link>
+                        )}
                         <Link
                           to={`/user/${user.id}`}
                           className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
