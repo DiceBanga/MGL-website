@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Edit, Trash2, Search, Filter, UserPlus, Shield, X, Check, AlertTriangle, Home } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { Link } from 'react-router-dom';
 
 interface User {
   id: string;
