@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Edit, Trash2, Search, Filter, Users, AlertTriangle, X, Check, Home } from 'lucide-react';
+import { Edit, Trash2, Search, Filter, Users, AlertTriangle, X, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { Link } from 'react-router-dom';
 
 interface Team {
   id: string;
@@ -184,13 +183,7 @@ function AdminTeams() {
     <div className="bg-gray-900 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-3xl font-bold text-white">Team Management</h1>
-            <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
-              <Home className="w-5 h-5 mr-2" />
-              Admin Home
-            </Link>
-          </div>
+          <h1 className="text-3xl font-bold text-white">Team Management</h1>
         </div>
 
         {/* Search and Filter */}

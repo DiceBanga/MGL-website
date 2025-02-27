@@ -39,6 +39,7 @@ import TeamProfile from './pages/profile/TeamProfile';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
+import AdminUsers from './pages/admin/Users';
 import AdminLeagues from './pages/admin/Leagues';
 import AdminTournaments from './pages/admin/Tournaments';
 import AdminTeams from './pages/admin/Teams';
@@ -47,6 +48,7 @@ import AdminGames from './pages/admin/Games';
 import AdminNews from './pages/admin/News';
 import AdminSponsors from './pages/admin/Sponsors';
 import AdminSettings from './pages/admin/Settings';
+import AdminSiteContent from './pages/admin/SiteContent';
 
 function App() {
   return (
@@ -86,17 +88,17 @@ function App() {
         <Route path="team/:teamId" element={<TeamProfile />} />
 
         {/* Admin Routes */}
-        <Route path="admin" element={<AuthGuard requireAuth requireAdmin />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="leagues" element={<AdminLeagues />} />
-          <Route path="tournaments" element={<AdminTournaments />} />
-          <Route path="teams" element={<AdminTeams />} />
-          <Route path="players" element={<AdminPlayers />} />
-          <Route path="games" element={<AdminGames />} />
-          <Route path="news" element={<AdminNews />} />
-          <Route path="sponsors" element={<AdminSponsors />} />
-          <Route path="settings" element={<AdminSettings />} />
-        </Route>
+        <Route path="admin" element={<AuthGuard requireAuth requireAdmin><AdminDashboard /></AuthGuard>} />
+        <Route path="admin/users" element={<AuthGuard requireAuth requireAdmin><AdminUsers /></AuthGuard>} />
+        <Route path="admin/leagues" element={<AuthGuard requireAuth requireAdmin><AdminLeagues /></AuthGuard>} />
+        <Route path="admin/tournaments" element={<AuthGuard requireAuth requireAdmin><AdminTournaments /></AuthGuard>} />
+        <Route path="admin/teams" element={<AuthGuard requireAuth requireAdmin><AdminTeams /></AuthGuard>} />
+        <Route path="admin/players" element={<AuthGuard requireAuth requireAdmin><AdminPlayers /></AuthGuard>} />
+        <Route path="admin/games" element={<AuthGuard requireAuth requireAdmin><AdminGames /></AuthGuard>} />
+        <Route path="admin/news" element={<AuthGuard requireAuth requireAdmin><AdminNews /></AuthGuard>} />
+        <Route path="admin/sponsors" element={<AuthGuard requireAuth requireAdmin><AdminSponsors /></AuthGuard>} />
+        <Route path="admin/settings" element={<AuthGuard requireAuth requireAdmin><AdminSettings /></AuthGuard>} />
+        <Route path="admin/site-content" element={<AuthGuard requireAuth requireAdmin><AdminSiteContent /></AuthGuard>} />
 
         {/* 404 Route */}
         <Route path="*" element={<NotFound />} />
