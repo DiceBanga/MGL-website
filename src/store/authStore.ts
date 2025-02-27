@@ -43,11 +43,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
     }
 
+    // Get user role from metadata
+    const role = data.user.user_metadata?.role || 'user';
+
     set({
       user: {
         id: data.user.id,
         email: data.user.email!,
-        role: data.user.role!
+        role: role
       }
     });
   },
@@ -68,7 +71,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: {
           id: data.user.id,
           email: data.user.email!,
-          role: data.user.role!
+          role: data.user.user_metadata?.role || 'user'
         }
       });
     }
@@ -105,7 +108,7 @@ supabase.auth.getSession().then(({ data: { session } }) => {
     useAuthStore.getState().setUser({
       id: session.user.id,
       email: session.user.email!,
-      role: session.user.role!
+      role: session.user.user_metadata?.role || 'user'
     });
   }
   useAuthStore.getState().loading = false;
@@ -117,7 +120,7 @@ supabase.auth.onAuthStateChange((_event, session) => {
     useAuthStore.getState().setUser({
       id: session.user.id,
       email: session.user.email!,
-      role: session.user.role!
+      role: session.user.user_metadata?.role || 'user'
     });
   } else {
     useAuthStore.getState().setUser(null);
