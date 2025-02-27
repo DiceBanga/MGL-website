@@ -13,7 +13,14 @@ const Login = () => {
     e.preventDefault();
     try {
       await signIn(email, password);
-      navigate('/dashboard');
+      const { user } = useAuthStore.getState();
+      
+      // Redirect based on user role
+      if (user?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError('Invalid email or password');
     }
