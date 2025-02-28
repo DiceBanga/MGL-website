@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search, Filter, Calendar, Trophy, AlertTriangle, X, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Edit, Trash2, Search, Filter, Calendar, Trophy, AlertTriangle, X, Check, Home, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 
@@ -34,6 +35,7 @@ function AdminTournaments() {
     status: 'upcoming',
     prize_pool: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchTournaments();
@@ -134,6 +136,7 @@ function AdminTournaments() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     
     try {
       const { data, error } = await supabase
@@ -155,12 +158,15 @@ function AdminTournaments() {
       setShowCreateModal(false);
     } catch (error) {
       console.error('Error creating tournament:', error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentTournament) return;
+    setIsSubmitting(true);
 
     try {
       const { error } = await supabase
@@ -182,6 +188,8 @@ function AdminTournaments() {
       setShowEditModal(false);
     } catch (error) {
       console.error('Error updating tournament:', error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -208,7 +216,17 @@ function AdminTournaments() {
     <div className="bg-gray-900 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-white">Tournament Management</h1>
+          <div className="flex items-center space-x-4">
+            <h1 className="text-3xl font-bold text-white">Tournament Management</h1>
+            <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
+              <Home className="w-5 h-5 mr-2" />
+              Admin Panel
+            </Link>
+            <Link to="/dashboard" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
+              <User2 className="w-5 h-5 mr-2" />
+              Dashboard
+            </Link>
+          </div>
           <div className="flex space-x-4">
             <button 
               onClick={handleCreateClick}
@@ -490,10 +508,20 @@ function AdminTournaments() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 flex items-center"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 flex items-center disabled:opacity-50"
                 >
-                  <Check className="w-4 h-4 mr-2" />
-                  Create Tournament
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Create Tournament
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -603,10 +631,20 @@ function AdminTournaments() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 flex items-center"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 flex items-center disabled:opacity-50"
                 >
-                  <Check className="w-4 h-4 mr-2" />
-                  Save Changes
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Save Changes
+                    </>
+                  )}
                 </button>
               </div>
             </form>
