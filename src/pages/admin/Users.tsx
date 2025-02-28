@@ -256,7 +256,7 @@ function AdminUsers() {
             <h1 className="text-3xl font-bold text-white">User Management</h1>
             <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
               <Home className="w-5 h-5 mr-2" />
-              Admin Home
+              Admin Panel
             </Link>
           </div>
           <div className="flex space-x-4">

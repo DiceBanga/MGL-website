@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit, Trash2, Search, Filter, Users, AlertTriangle, X, Check, Home } from 'lucide-react';
+import { Edit, Trash2, Search, Filter, Users, AlertTriangle, X, Check, Home, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Link } from 'react-router-dom';
 
@@ -186,9 +186,9 @@ function AdminTeams() {
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center space-x-4">
             <h1 className="text-3xl font-bold text-white">Team Management</h1>
-            <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
-              <Home className="w-5 h-5 mr-2" />
-              Admin Home
+            <Link to="/dashboard" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
+              <User2 className="w-5 h-5 mr-2" />
+              Dashboard
             </Link>
           </div>
         </div>

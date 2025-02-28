@@ -12,7 +12,7 @@ import {
   DollarSign,
   UserCheck,
   Shield,
-  Home
+  User2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../../lib/supabase';
@@ -73,10 +73,10 @@ function AdminDashboard() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center space-x-4">
-            <h1 className="text-3xl font-bold text-white">Admin Dashboard</h1>
-            <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
-              <Home className="w-5 h-5 mr-2" />
-              Admin Home
+            <h1 className="text-3xl font-bold text-white">Admin Panel</h1>
+            <Link to="/dashboard" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
+              <User2 className="w-5 h-5 mr-2" />
+              Dashboard
             </Link>
           </div>
           <div className="flex space-x-4">
