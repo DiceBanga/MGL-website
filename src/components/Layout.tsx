@@ -107,6 +107,7 @@ const Layout: React.FC = () => {
                 <div className="relative group">
                   <button
                     className="flex items-center space-x-3 text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium"
+                    onMouseEnter={() => setShowDropdown(true)}
                   >
                     <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
                       {userProfile?.avatar_url ? (
@@ -122,7 +123,11 @@ const Layout: React.FC = () => {
                     <span>{userProfile?.display_name || 'User'}</span>
                   </button>
 
-                  <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50 hidden group-hover:block">
+                  <div 
+                    className={`absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50 ${showDropdown ? 'block' : 'hidden'}`}
+                    onMouseEnter={() => setShowDropdown(true)}
+                    onMouseLeave={() => setShowDropdown(false)}
+                  >
                     {user.role === 'admin' ? (
                       <>
                         <Link
