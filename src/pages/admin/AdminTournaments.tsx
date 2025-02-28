@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Edit, Trash2, Search, Filter, Calendar, Trophy, AlertTriangle, X, Check, Home } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Calendar, Trophy, AlertTriangle, X, Check, Home, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 
@@ -221,6 +221,10 @@ function AdminTournaments() {
             <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
               <Home className="w-5 h-5 mr-2" />
               Admin Panel
+            </Link>
+            <Link to="/dashboard" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
+              <User2 className="w-5 h-5 mr-2" />
+              Dashboard
             </Link>
           </div>
           <div className="flex space-x-4">
