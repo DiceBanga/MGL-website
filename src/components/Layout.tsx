@@ -19,13 +19,8 @@ const Layout: React.FC = () => {
   useEffect(() => {
     if (user) {
       fetchUserProfile();
-      
-      // Redirect admin users to admin dashboard if they're trying to access user dashboard
-      if (user.role === 'admin' && location.pathname === '/dashboard') {
-        navigate('/admin');
-      }
     }
-  }, [user, location.pathname, navigate]);
+  }, [user]);
 
   const fetchUserProfile = async () => {
     if (!user) return;
@@ -109,9 +104,8 @@ const Layout: React.FC = () => {
             </div>
             <div className="flex items-center space-x-4">
               {user ? (
-                <div className="relative">
+                <div className="relative group">
                   <button
-                    onClick={() => setShowDropdown(!showDropdown)}
                     className="flex items-center space-x-3 text-white hover:text-green-400 px-4 py-2 rounded-md text-sm font-medium"
                   >
                     <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
@@ -128,48 +122,46 @@ const Layout: React.FC = () => {
                     <span>{userProfile?.display_name || 'User'}</span>
                   </button>
 
-                  {showDropdown && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowDropdown(false)}
-                      ></div>
-                      <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
-                        {user.role === 'admin' ? (
-                          <Link
-                            to="/admin"
-                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
-                            onClick={() => setShowDropdown(false)}
-                          >
-                            <Settings className="w-4 h-4 mr-2" />
-                            Admin Panel
-                          </Link>
-                        ) : (
-                          <Link
-                            to="/dashboard"
-                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-                            onClick={() => setShowDropdown(false)}
-                          >
-                            Dashboard
-                          </Link>
-                        )}
+                  <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50 hidden group-hover:block">
+                    {user.role === 'admin' ? (
+                      <>
                         <Link
-                          to={`/user/${user.id}`}
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-                          onClick={() => setShowDropdown(false)}
+                          to="/admin"
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
                         >
-                          Profile
+                          <Settings className="w-4 h-4 mr-2" />
+                          Admin Panel
                         </Link>
-                        <button
-                          onClick={handleSignOut}
-                          className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                        <Link
+                          to="/dashboard"
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
                         >
-                          <LogOut className="w-4 h-4 mr-2" />
-                          Sign Out
-                        </button>
-                      </div>
-                    </>
-                  )}
+                          <User2 className="w-4 h-4 mr-2" />
+                          Dashboard
+                        </Link>
+                      </>
+                    ) : (
+                      <Link
+                        to="/dashboard"
+                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                      >
+                        Dashboard
+                      </Link>
+                    )}
+                    <Link
+                      to={`/user/${user.id}`}
+                      className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                    >
+                      Profile
+                    </Link>
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
