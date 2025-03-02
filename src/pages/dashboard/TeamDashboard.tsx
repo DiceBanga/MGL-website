@@ -96,8 +96,6 @@ const TeamDashboard = () => {
   const [selectedEventName, setSelectedEventName] = useState<string>('');
   const [selectedPlayers, setSelectedPlayers] = useState<TeamMember[]>([]);
   const [availableRosterPlayers, setAvailableRosterPlayers] = useState<TeamMember[]>([]);
-  const [showPaymentSimulation, setShowPaymentSimulation] = useState(false);
-  const [processingPayment, setProcessingPayment] = useState(false);
   const [captain, setCaptain] = useState<TeamMember | null>(null);
 
   useEffect(() => {
@@ -499,56 +497,23 @@ const TeamDashboard = () => {
     setIsRegistering(true);
     
     try {
-      // Simulate registration process
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Create payment details
+      const paymentDetails = {
+        id: `reg-${Date.now()}`,
+        type: registrationType,
+        name: selectedEventName,
+        amount: registrationType === 'tournament' ? 50 : 100,
+        description: `Registration fee for ${selectedEventName}`,
+        teamId: teamId,
+        eventId: selectedEvent,
+        playersIds: selectedPlayers.map(p => p.id)
+      };
       
-      // Show payment simulation
-      setShowRegistrationForm(false);
-      setShowPaymentSimulation(true);
+      // Navigate to payment page
+      navigate('/payments', { state: { paymentDetails } });
     } catch (error) {
       console.error('Error during registration:', error);
       setIsRegistering(false);
-    }
-  };
-
-  const handlePaymentSimulation = async () => {
-    setProcessingPayment(true);
-    
-    try {
-      // Simulate payment processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Complete registration based on type
-      if (registrationType === 'tournament') {
-        const { error } = await supabase.rpc('register_for_tournament', {
-          p_tournament_id: selectedEvent,
-          p_team_id: teamId,
-          p_player_ids: selectedPlayers.map(p => p.id)
-        });
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.rpc('register_for_league', {
-          p_league_id: selectedEvent,
-          p_team_id: teamId,
-          p_season: 1, // Default to season 1
-          p_player_ids: selectedPlayers.map(p => p.id)
-        });
-
-        if (error) throw error;
-      }
-      
-      // Refresh registrations
-      await fetchTeamRegistrations();
-      
-      // Reset state
-      setShowPaymentSimulation(false);
-      setProcessingPayment(false);
-      setSelectedEvent('');
-      setSelectedPlayers([]);
-    } catch (error) {
-      console.error('Error completing registration:', error);
-      setProcessingPayment(false);
     }
   };
 
@@ -1067,28 +1032,52 @@ const TeamDashboard = () => {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Delete/Transfer Confirmation Modal */}
-      {deleteConfirmation.show && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            {deleteConfirmation.type === 'disband' ? (
-              <>
-                {deleteConfirmation.step === 1 ? (
-                  <div className="text-center">
-                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-white mb-2">Disband Team?</h3>
-                    <p className="text-gray-300 mb-6">
-                      Are you sure you want to disband this team? This action cannot be undone.
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <button
-                        onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
-                        className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-600"
-                      >
-                        Yes, Disband Team
-                      </button>
+        {/* Delete/Transfer Confirmation Modal */}
+        {deleteConfirmation.show && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              {deleteConfirmation.type === 'disband' ? (
+                <>
+                  {deleteConfirmation.step === 1 ? (
+                    <div className="text-center">
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-white mb-2">Disband Team?</h3>
+                      <p className="text-gray-300 mb-6">
+                        Are you sure you want to disband this team? This action cannot be undone.
+                      </p>
+                      <div className="flex justify-center space-x-4">
+                        <button
+                          onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
+                          className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-600"
+                        >
+                          Yes, Disband Team
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
+                          className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
+                      <p className="text-gray-300 mb-6">
+                        Type "DISBAND" to confirm you want to permanently delete this team.
+                      </p>
+                      <input
+                        type="text"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                        placeholder="Type DISBAND"
+                        onChange={(e) => {
+                          if (e.target.value === 'DISBAND') {
+                            handleDisbandTeam();
+                          }
+                        }}
+                      />
                       <button
                         onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
                         className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
@@ -1096,48 +1085,47 @@ const TeamDashboard = () => {
                         Cancel
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
-                    <p className="text-gray-300 mb-6">
-                      Type "DISBAND" to confirm you want to permanently delete this team.
-                    </p>
-                    <input
-                      type="text"
-                      className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
-                      placeholder="Type DISBAND"
-                      onChange={(e) => {
-                        if (e.target.value === 'DISBAND') {
-                          handleDisbandTeam();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
-                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {deleteConfirmation.step === 1 ? (
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-white mb-2">Transfer Team Ownership</h3>
-                    <p className="text-gray-300 mb-6">
-                      Are you sure you want to transfer team ownership? You will become a regular team member.
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <button
-                        onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
-                        className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
-                      >
-                        Continue
-                      </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {deleteConfirmation.step === 1 ? (
+                    <div className="text-center">
+                      <h3 className="text-xl font-bold text-white mb-2">Transfer Team Ownership</h3>
+                      <p className="text-gray-300 mb-6">
+                        Are you sure you want to transfer team ownership? You will become a regular team member.
+                      </p>
+                      <div className="flex justify-center space-x-4">
+                        <button
+                          onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
+                          className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                        >
+                          Continue
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
+                          className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
+                      <p className="text-gray-300 mb-6">
+                        Type "TRANSFER" to confirm the ownership transfer.
+                      </p>
+                      <input
+                        type="text"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                        placeholder="Type TRANSFER"
+                        onChange={(e) => {
+                          if (e.target.value === 'TRANSFER' && deleteConfirmation.targetId) {
+                            handleTransferOwnership(deleteConfirmation.targetId);
+                          }
+                        }}
+                      />
                       <button
                         onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
                         className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
@@ -1145,95 +1133,13 @@ const TeamDashboard = () => {
                         Cancel
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
-                    <p className="text-gray-300 mb-6">
-                      Type "TRANSFER" to confirm the ownership transfer.
-                    </p>
-                    <input
-                      type="text"
-                      className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
-                      placeholder="Type TRANSFER"
-                      onChange={(e) => {
-                        if (e.target.value === 'TRANSFER' && deleteConfirmation.targetId) {
-                          handleTransferOwnership(deleteConfirmation.targetId);
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
-                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-       {/* Payment {/* Payment Simulation Modal */}
-      {showPaymentSimulation && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <div className="text-center">
-              <DollarSign className="w-12 h-12 text-green-500 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-white mb-2">Payment Required</h3>
-              <p className="text-gray-300 mb-6">
-                To complete your registration for <span className="text-green-500 font-medium">{selectedEventName}</span>, a registration fee is required.
-              </p>
-              
-              <div className="bg-gray-700 rounded-lg p-4 mb-6">
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-300">Registration Fee:</span>
-                  <span className="text-white font-medium">$50.00</span>
-                </div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-300">Processing Fee:</span>
-                  <span className="text-white font-medium">$2.50</span>
-                </div>
-                <div className="border-t border-gray-600 my-2"></div>
-                <div className="flex justify-between font-bold">
-                  <span className="text-gray-300">Total:</span>
-                  <span className="text-green-500">$52.50</span>
-                </div>
-              </div>
-              
-              <div className="flex justify-center space-x-4">
-                <button
-                  onClick={() => {
-                    setShowPaymentSimulation(false);
-                    setSelectedEvent('');
-                    setSelectedPlayers([]);
-                  }}
-                  className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-                  disabled={processingPayment}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handlePaymentSimulation}
-                  disabled={processingPayment}
-                  className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {processingPayment ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    'Complete Payment'
                   )}
-                </button>
-              </div>
+                </>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

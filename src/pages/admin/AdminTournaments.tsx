@@ -212,6 +212,9 @@ function AdminTournaments() {
     }
   };
 
+  // Valid status values based on the database constraint
+  const validStatusValues = ['upcoming', 'registration', 'active', 'completed', 'cancelled'];
+
   return (
     <div className="bg-gray-900 p-8">
       <div className="max-w-7xl mx-auto">
@@ -269,11 +272,11 @@ function AdminTournaments() {
                   className="bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
                 >
                   <option value="all">All Status</option>
-                  <option value="upcoming">Upcoming</option>
-                  <option value="registration">Registration</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
+                  {validStatusValues.map(status => (
+                    <option key={status} value={status}>
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -479,11 +482,11 @@ function AdminTournaments() {
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
                     className="w-full bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
                   >
-                    <option value="upcoming">Upcoming</option>
-                    <option value="registration">Registration</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
+                    {validStatusValues.map(status => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -602,11 +605,11 @@ function AdminTournaments() {
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
                     className="w-full bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
                   >
-                    <option value="upcoming">Upcoming</option>
-                    <option value="registration">Registration</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
+                    {validStatusValues.map(status => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
