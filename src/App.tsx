@@ -50,6 +50,9 @@ import AdminSponsors from './pages/admin/Sponsors';
 import AdminSettings from './pages/admin/Settings';
 import AdminSiteContent from './pages/admin/SiteContent';
 
+// Payment Pages
+import Payments from './pages/Payments';
+
 function App() {
   return (
     <Routes>
@@ -86,6 +89,9 @@ function App() {
         {/* Profile Routes */}
         <Route path="user/:userId" element={<UserProfile />} />
         <Route path="team/:teamId" element={<TeamProfile />} />
+
+        {/* Payment Routes */}
+        <Route path="payments" element={<AuthGuard requireAuth><Payments /></AuthGuard>} />
 
         {/* Admin Routes */}
         <Route path="admin" element={<AuthGuard requireAuth requireAdmin><AdminDashboard /></AuthGuard>} />
