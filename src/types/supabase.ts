@@ -1,4 +1,4 @@
-import { Database } from '@supabase/supabase-js'
+import { PostgrestError } from '@supabase/supabase-js'
 
 export interface Tables {
   players: {
@@ -9,6 +9,8 @@ export interface Tables {
   admins: {
     id: string
     created_at: string
+    user_id: string
+    is_owner: boolean
     // Add other admin fields
   }
   sponsors: {
