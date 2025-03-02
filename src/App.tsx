@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import AuthGuard from './components/AuthGuard';
+import { OwnerRoute } from './components/OwnerRoute';
 
 // Public Pages
 import Home from './pages/Home';
@@ -49,9 +50,23 @@ import AdminNews from './pages/admin/News';
 import AdminSponsors from './pages/admin/Sponsors';
 import AdminSettings from './pages/admin/Settings';
 import AdminSiteContent from './pages/admin/SiteContent';
+import AdminManagement from './pages/admin/Management';
 
 // Payment Pages
 import Payments from './pages/Payments';
+
+// Owner Pages
+import OwnerDashboard from './pages/owner/OwnerDashboard';
+import OwnerLeagues from './pages/owner/Leagues';
+import OwnerPlayers from './pages/owner/Players';
+import OwnerSettings from './pages/owner/Settings';
+import OwnerSiteContent from './pages/owner/SiteContent';
+import OwnerSponsors from './pages/owner/Sponsors';
+import OwnerUsers from './pages/owner/Users';
+import OwnerTeams from './pages/owner/Teams';
+import OwnerTournaments from './pages/owner/Tournaments';
+import OwnerNews from './pages/owner/News';
+import OwnerManagement from './pages/owner/Management';
 
 function App() {
   return (
@@ -93,18 +108,50 @@ function App() {
         {/* Payment Routes */}
         <Route path="payments" element={<AuthGuard requireAuth><Payments /></AuthGuard>} />
 
-        {/* Admin Routes */}
-        <Route path="admin" element={<AuthGuard requireAuth requireAdmin><AdminDashboard /></AuthGuard>} />
-        <Route path="admin/users" element={<AuthGuard requireAuth requireAdmin><AdminUsers /></AuthGuard>} />
-        <Route path="admin/leagues" element={<AuthGuard requireAuth requireAdmin><AdminLeagues /></AuthGuard>} />
-        <Route path="admin/tournaments" element={<AuthGuard requireAuth requireAdmin><AdminTournaments /></AuthGuard>} />
-        <Route path="admin/teams" element={<AuthGuard requireAuth requireAdmin><AdminTeams /></AuthGuard>} />
-        <Route path="admin/players" element={<AuthGuard requireAuth requireAdmin><AdminPlayers /></AuthGuard>} />
-        <Route path="admin/games" element={<AuthGuard requireAuth requireAdmin><AdminGames /></AuthGuard>} />
-        <Route path="admin/news" element={<AuthGuard requireAuth requireAdmin><AdminNews /></AuthGuard>} />
-        <Route path="admin/sponsors" element={<AuthGuard requireAuth requireAdmin><AdminSponsors /></AuthGuard>} />
-        <Route path="admin/settings" element={<AuthGuard requireAuth requireAdmin><AdminSettings /></AuthGuard>} />
-        <Route path="admin/site-content" element={<AuthGuard requireAuth requireAdmin><AdminSiteContent /></AuthGuard>} />
+        {/* Admin Routes - accessible by both admins and owners */}
+        <Route
+          path="/admin/*"
+          element={
+            <AuthGuard requireAuth requireAdmin>
+              <Routes>
+                <Route index element={<AdminDashboard />} />
+                <Route path="users" element={<AdminUsers />} />
+                <Route path="leagues" element={<AdminLeagues />} />
+                <Route path="tournaments" element={<AdminTournaments />} />
+                <Route path="teams" element={<AdminTeams />} />
+                <Route path="players" element={<AdminPlayers />} />
+                <Route path="games" element={<AdminGames />} />
+                <Route path="news" element={<AdminNews />} />
+                <Route path="sponsors" element={<AdminSponsors />} />
+                <Route path="settings" element={<AdminSettings />} />
+                <Route path="site-content" element={<AdminSiteContent />} />
+                <Route path="management" element={<AdminManagement />} />
+              </Routes>
+            </AuthGuard>
+          }
+        />
+
+        {/* Owner Routes */}
+        <Route
+          path="/owner/*"
+          element={
+            <OwnerRoute>
+              <Routes>
+                <Route index element={<OwnerDashboard />} />
+                <Route path="admins" element={<OwnerManagement />} />
+                <Route path="leagues" element={<OwnerLeagues />} />
+                <Route path="players" element={<OwnerPlayers />} />
+                <Route path="settings" element={<OwnerSettings />} />
+                <Route path="site-content" element={<OwnerSiteContent />} />
+                <Route path="sponsors" element={<OwnerSponsors />} />
+                <Route path="users" element={<OwnerUsers />} />
+                <Route path="teams" element={<OwnerTeams />} />
+                <Route path="tournaments" element={<OwnerTournaments />} />
+                <Route path="news" element={<OwnerNews />} />
+              </Routes>
+            </OwnerRoute>
+          }
+        />
 
         {/* 404 Route */}
         <Route path="*" element={<NotFound />} />

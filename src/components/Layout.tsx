@@ -3,6 +3,7 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut, Settings } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 interface UserProfile {
   display_name: string;
@@ -15,6 +16,7 @@ const Layout: React.FC = () => {
   const { user, signOut } = useAuthStore();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const { isAdmin, isOwner } = useAuth();
 
   useEffect(() => {
     if (user) {
@@ -58,6 +60,9 @@ const Layout: React.FC = () => {
     await signOut();
     setShowDropdown(false);
   };
+
+  // Show admin nav if user is either admin or owner
+  const showAdminNav = isAdmin || isOwner;
 
   return (
     <div className="min-h-screen bg-pattern flex flex-col">
@@ -128,15 +133,25 @@ const Layout: React.FC = () => {
                     onMouseEnter={() => setShowDropdown(true)}
                     onMouseLeave={() => setShowDropdown(false)}
                   >
-                    {user.role === 'admin' ? (
+                    {showAdminNav && (
                       <>
-                        <Link
-                          to="/admin"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
-                        >
-                          <Settings className="w-4 h-4 mr-2" />
-                          Admin Panel
-                        </Link>
+                        {isOwner ? (
+                          <Link
+                            to="/owner"
+                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            Owner Dashboard
+                          </Link>
+                        ) : (
+                          <Link
+                            to="/admin"
+                            className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            Admin Panel
+                          </Link>
+                        )}
                         <Link
                           to="/dashboard"
                           className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
@@ -145,13 +160,6 @@ const Layout: React.FC = () => {
                           Dashboard
                         </Link>
                       </>
-                    ) : (
-                      <Link
-                        to="/dashboard"
-                        className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-                      >
-                        Dashboard
-                      </Link>
                     )}
                     <Link
                       to={`/user/${user.id}`}
