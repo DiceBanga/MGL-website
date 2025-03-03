@@ -4,6 +4,8 @@ import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, Use
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import logo from '../assets/images/logo.svg';
+import backgroundPattern from '../assets/images/background.svg';
 
 interface UserProfile {
   display_name: string;
@@ -65,7 +67,15 @@ const Layout: React.FC = () => {
   const showAdminNav = isAdmin || isOwner;
 
   return (
-    <div className="min-h-screen bg-pattern flex flex-col">
+    <div 
+      className="min-h-screen flex flex-col"
+      style={{
+        backgroundImage: `url(${backgroundPattern})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
       {/* Navigation Bar */}
       <nav className="bg-black/80 backdrop-blur-sm border-b border-green-700 relative z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -73,9 +83,13 @@ const Layout: React.FC = () => {
             <div className="flex items-center">
               <Link to="/">
                 <img 
-                  src="https://i.imgur.com/YourMLGLogo.png" 
+                  src={logo} 
                   alt="MGL Logo" 
-                  className="h-10"
+                  className="h-12 w-auto"
+                  style={{
+                    filter: 'brightness(0) invert(1)', // Make the logo white
+                    maxWidth: '150px'
+                  }}
                 />
               </Link>
               <div className="hidden md:block ml-10">
@@ -152,15 +166,15 @@ const Layout: React.FC = () => {
                             Admin Panel
                           </Link>
                         )}
-                        <Link
-                          to="/dashboard"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
-                        >
-                          <User2 className="w-4 h-4 mr-2" />
-                          Dashboard
-                        </Link>
                       </>
                     )}
+                    <Link
+                      to="/dashboard"
+                      className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center"
+                    >
+                      <User2 className="w-4 h-4 mr-2" />
+                      Dashboard
+                    </Link>
                     <Link
                       to={`/user/${user.id}`}
                       className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
