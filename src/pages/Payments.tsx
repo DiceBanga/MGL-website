@@ -28,6 +28,7 @@ const Payments = () => {
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCVC, setCardCVC] = useState('');
   const [cardName, setCardName] = useState('');
+  const [zipCode, setZipCode] = useState('');
   const [cashAppUsername, setCashAppUsername] = useState('');
 
   useEffect(() => {
@@ -101,6 +102,11 @@ const Payments = () => {
       setError('Please enter the name on your card');
       return false;
     }
+
+    if (!zipCode.trim() || zipCode.length < 5) {
+      setError('Please enter a valid ZIP code');
+      return false;
+    }
     
     return true;
   };
@@ -131,10 +137,12 @@ const Payments = () => {
       
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // Record payment in database
       if (paymentDetails) {
         await recordPayment('square');
+      } else {
+        throw new Error('Payment details not found');
       }
       
       setSuccess(true);
@@ -184,13 +192,8 @@ const Payments = () => {
         currency: 'USD',
         payment_method: provider,
         status: 'completed',
-        description: paymentDetails.description,
-        metadata: {
-          type: paymentDetails.type,
-          event_id: paymentDetails.eventId,
-          team_id: paymentDetails.teamId,
-          players_ids: paymentDetails.playersIds
-        }
+        payment_id: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        // id, created_at, and updated_at will be automatically set by the database
       });
       
     if (error) {
@@ -199,18 +202,20 @@ const Payments = () => {
     }
     
     // If this is a tournament or league registration, update the registration status
-    if (paymentDetails.type === 'tournament' && paymentDetails.eventId && paymentDetails.teamId) {
-      await supabase
-        .from('tournament_registrations')
-        .update({ status: 'approved', payment_status: 'paid' })
-        .eq('tournament_id', paymentDetails.eventId)
-        .eq('team_id', paymentDetails.teamId);
-    } else if (paymentDetails.type === 'league' && paymentDetails.eventId && paymentDetails.teamId) {
-      await supabase
-        .from('league_registrations')
-        .update({ status: 'approved', payment_status: 'paid' })
-        .eq('league_id', paymentDetails.eventId)
-        .eq('team_id', paymentDetails.teamId);
+    if (paymentDetails.eventId && paymentDetails.teamId) {
+      if (paymentDetails.type === 'tournament') {
+        await supabase
+          .from('tournament_registrations')
+          .update({ status: 'approved', payment_status: 'paid' })
+          .eq('tournament_id', paymentDetails.eventId)
+          .eq('team_id', paymentDetails.teamId);
+      } else if (paymentDetails.type === 'league') {
+        await supabase
+          .from('league_registrations')
+          .update({ status: 'approved', payment_status: 'paid' })
+          .eq('league_id', paymentDetails.eventId)
+          .eq('team_id', paymentDetails.teamId);
+      }
     }
   };
 
@@ -396,6 +401,20 @@ const Payments = () => {
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">
+                              Name on Card
+                            </label>
+                            <input
+                              type="text"
+                              value={cardName}
+                              onChange={(e) => setCardName(e.target.value)}
+                              placeholder="John Doe"
+                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1">
                               Card Number
                             </label>
                             <div className="relative">
@@ -441,16 +460,21 @@ const Payments = () => {
                               />
                             </div>
                           </div>
-                          
+
                           <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Name on Card
+                              ZIP Code
                             </label>
                             <input
                               type="text"
-                              value={cardName}
-                              onChange={(e) => setCardName(e.target.value)}
-                              placeholder="John Doe"
+                              value={zipCode}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, '');
+                                if (value.length <= 5) {
+                                  setZipCode(value);
+                                }
+                              }}
+                              placeholder="12345"
                               className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
                               required
                             />
