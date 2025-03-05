@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@square/web-payments-sdk": "^2.0.0",
+    "@square/web-sdk": "^2.0.1",
     "@supabase/supabase-js": "^2.39.0",
     "date-fns": "^2.30.0",
     "lucide-react": "^0.294.0",
@@ -18,11 +20,13 @@
     "react-router-dom": "^6.20.0",
     "recharts": "^2.10.1",
     "square": "^41.0.0",
+    "uuid": "^9.0.1",
     "zustand": "^4.5.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
+    "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
     "@vitejs/plugin-react": "^4.2.0",

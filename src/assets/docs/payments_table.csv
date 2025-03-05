@@ -1,4 +1,4 @@
-﻿"column_name","data_type","is_nullable","column_default"
+"column_name","data_type","is_nullable","column_default"
 "id","uuid","NO","uuid_generate_v4()"
 "user_id","uuid","NO","null"
 "amount","numeric","NO","null"
