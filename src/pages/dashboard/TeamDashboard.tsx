@@ -799,6 +799,22 @@ const TeamDashboard = () => {
                     Join League
                   </button>
                 </div>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => handleRegistrationClick('tournament')}
+                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
+                  >
+                    <Trophy className="w-5 h-5 mr-2" />
+                    Join Tournament
+                  </button>
+                  <button
+                    onClick={() => handleRegistrationClick('league')}
+                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
+                  >
+                    <Calendar className="w-5 h-5 mr-2" />
+                    Join League
+                  </button>
+                </div>
               </div>
 
               {showRegistrationForm ? (
