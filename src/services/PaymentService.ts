@@ -1,46 +1,27 @@
 import { payments } from '@square/web-payments-sdk';
 import { supabase } from '../lib/supabase';
 import { paymentConfig } from '../config/payments';
-import { validatePaymentAmount, validateZipCode, sanitizePaymentData } from '../utils/payment-validation';
-import type { PaymentDetails, PaymentResponse } from '../types/payment';
 
 export class PaymentService {
   private squarePayments: payments.Payments | null = null;
 
   async initializeSquare() {
     if (!this.squarePayments) {
-      this.squarePayments = await payments.Payments(paymentConfig.square.applicationId, {
-        environment: paymentConfig.square.environment
-      });
+      this.squarePayments = await payments.Payments(
+        import.meta.env.VITE_SQUARE_APP_ID,
+        {
+          environment: 'sandbox'
+        }
+      );
     }
     return this.squarePayments;
   }
 
-  private async logPaymentAttempt(data: Record<string, any>) {
+  async processPayment(sourceId: string, amount: number, zipCode: string) {
     try {
-      await supabase.from('payment_logs').insert({
-        timestamp: new Date().toISOString(),
-        data: sanitizePaymentData(data)
-      });
-    } catch (error) {
-      console.error('Failed to log payment attempt:', error);
-    }
-  }
-
-  async processPayment(sourceId: string, amount: number, zipCode: string): Promise<PaymentResponse> {
-    try {
-      // Validate inputs
-      if (!validatePaymentAmount(amount)) {
-        throw new Error('Invalid payment amount');
-      }
-      if (!validateZipCode(zipCode)) {
-        throw new Error('Invalid ZIP code');
-      }
-
-      // Log payment attempt
-      await this.logPaymentAttempt({ sourceId, amount, zipCode });
-
-      // Create pending payment record
+      console.log('Starting payment process:', { amount, zipCode });
+      
+      // First record the pending payment in Supabase
       const { data: paymentRecord, error: dbError } = await supabase
         .from('payments')
         .insert({
@@ -52,46 +33,53 @@ export class PaymentService {
         .select()
         .single();
 
+      console.log('Supabase payment record:', { paymentRecord, error: dbError });
+
       if (dbError) {
+        console.error('Supabase error:', dbError);
         throw new Error('Failed to create payment record');
       }
 
       // Process payment with Square
+      console.log('Sending request to Square API:', {
+        sourceId,
+        amount,
+        locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
+        zipCode,
+        paymentId: paymentRecord.id
+      });
+
       const response = await fetch('/api/payments/square', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           sourceId,
           amount,
-          locationId: paymentConfig.square.locationId,
+          locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
           zipCode,
           paymentId: paymentRecord.id
         }),
       });
 
       const data = await response.json();
-
+      console.log('Square API response:', { status: response.status, data });
+      
       if (!response.ok) {
+        console.error('Payment failed:', data);
         // Update payment status to failed
-        await supabase
+        const { error: updateError } = await supabase
           .from('payments')
-          .update({ 
-            status: 'failed',
-            error: data.error?.message || 'Payment processing failed'
-          })
+          .update({ status: 'failed' })
           .eq('id', paymentRecord.id);
-
-        return {
-          success: false,
-          error: {
-            code: data.error?.code || 'PAYMENT_FAILED',
-            message: data.error?.message || 'Payment processing failed'
-          }
-        };
+        
+        console.log('Updated payment status to failed:', { error: updateError });
+        throw new Error(data.error || 'Payment processing failed');
       }
 
       // Update payment status to completed
-      await supabase
+      const { error: completeError } = await supabase
         .from('payments')
         .update({ 
           status: 'completed',
@@ -99,109 +87,13 @@ export class PaymentService {
         })
         .eq('id', paymentRecord.id);
 
-      return {
-        success: true,
-        payment: {
-          id: paymentRecord.id,
-          amount,
-          currency: 'USD',
-          status: 'completed',
-          paymentMethod: 'square',
-          paymentId: data.payment.id
-        }
-      };
+      console.log('Updated payment status to completed:', { error: completeError });
+      return data;
     } catch (error) {
       console.error('Payment processing error:', error);
-      return {
-        success: false,
-        error: {
-          code: 'PAYMENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unexpected error occurred'
-        }
-      };
-    }
-  }
-
-  async processCashAppPayment(amount: number, cashtag: string): Promise<PaymentResponse> {
-    try {
-      if (!validatePaymentAmount(amount)) {
-        throw new Error('Invalid payment amount');
-      }
-
-      // Log payment attempt
-      await this.logPaymentAttempt({ amount, cashtag });
-
-      // Create pending payment record
-      const { data: paymentRecord, error: dbError } = await supabase
-        .from('payments')
-        .insert({
-          amount,
-          payment_method: 'cashapp',
-          status: 'pending',
-          currency: 'USD'
-        })
-        .select()
-        .single();
-
-      if (dbError) {
-        throw new Error('Failed to create payment record');
-      }
-
-      // Generate CashApp payment link
-      const response = await fetch('/api/payments/cashapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount,
-          cashtag,
-          paymentId: paymentRecord.id
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        await supabase
-          .from('payments')
-          .update({ 
-            status: 'failed',
-            error: data.error?.message || 'Payment processing failed'
-          })
-          .eq('id', paymentRecord.id);
-
-        return {
-          success: false,
-          error: {
-            code: data.error?.code || 'PAYMENT_FAILED',
-            message: data.error?.message || 'Payment processing failed'
-          }
-        };
-      }
-
-      return {
-        success: true,
-        payment: {
-          id: paymentRecord.id,
-          amount,
-          currency: 'USD',
-          status: 'pending',
-          paymentMethod: 'cashapp',
-          metadata: {
-            paymentUrl: data.paymentUrl
-          }
-        }
-      };
-    } catch (error) {
-      console.error('CashApp payment error:', error);
-      return {
-        success: false,
-        error: {
-          code: 'PAYMENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unexpected error occurred'
-        }
-      };
+      throw error;
     }
   }
 }
 
-export const paymentService = new PaymentService();
+export const paymentService = new PaymentService(); 
