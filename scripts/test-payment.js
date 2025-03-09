@@ -1,19 +1,23 @@
 // Import Square SDK
-import 'dotenv/config';
-import { SquareClient, SquareEnvironment } from 'square';
+import { Client, Environment } from 'square';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 async function main() {
-    // Check for environment variable
-    if (!process.env.SQUARE_ACCESS_TOKEN) {
-        console.error('Error: SQUARE_ACCESS_TOKEN environment variable is not set');
-        console.log('Please set it with: export SQUARE_ACCESS_TOKEN=your_token_here');
-        process.exit(1);
+    // Check for environment variables
+    if (!process.env.VITE_SQUARE_ACCESS_TOKEN) {
+        throw new Error('VITE_SQUARE_ACCESS_TOKEN environment variable is not set');
+    }
+
+    if (!process.env.VITE_SQUARE_LOCATION_ID) {
+        throw new Error('VITE_SQUARE_LOCATION_ID environment variable is not set');
     }
 
     // Create the Square client
-    const client = new SquareClient({
-        environment: SquareEnvironment.Sandbox, // Use Sandbox for testing
-        token: process.env.SQUARE_ACCESS_TOKEN,
+    const client = new Client({
+        accessToken: process.env.VITE_SQUARE_ACCESS_TOKEN,
+        environment: Environment.Sandbox
     });
 
     // Generate a unique idempotency key
@@ -21,58 +25,60 @@ async function main() {
     
     try {
         console.log('Initiating test payment...');
+        console.log('Using location ID:', process.env.VITE_SQUARE_LOCATION_ID);
         
         // Create a payment
-        const response = await client.payments.create({
-            // For testing, use a sandbox-specific test card nonce
-            // In production, this would come from Square.js in your frontend
+        const response = await client.paymentsApi.createPayment({
             sourceId: 'cnon:card-nonce-ok',
-            
-            // Amount must be a BigInt for precise currency handling
             amountMoney: {
                 amount: BigInt(1000), // $10.00
                 currency: 'USD'
             },
-            
-            // Using our generated idempotency key to prevent duplicate payments
-            idempotencyKey: idempotencyKey,
-            
-            // Additional optional fields
+            idempotencyKey,
+            locationId: process.env.VITE_SQUARE_LOCATION_ID,
             note: 'Test payment',
-            customerId: null, // You can add a customer ID here if needed
-            
-            // Include reference ID if needed for your own tracking
-            referenceId: 'test-payment-' + new Date().toISOString(),
-            
-            // You can add shipping/billing details as needed
-            // billingAddress: { ... },
-            // shippingAddress: { ... },
+            referenceId: 'test-payment-' + new Date().toISOString()
         });
         
+        if (!response?.result?.payment) {
+            throw new Error('Payment creation failed: No payment data received');
+        }
+
         console.log('✅ Payment successful!');
-        console.log('Transaction ID:', response.payment.id);
-        console.log('Status:', response.payment.status);
-        console.log('Amount:', response.payment.amountMoney);
+        console.log('Transaction ID:', response.result.payment.id);
+        console.log('Status:', response.result.payment.status);
+        console.log('Amount:', response.result.payment.amountMoney);
         
         return response;
     } catch (error) {
         console.error('❌ Payment failed:');
         
-        // Log detailed error information
-        if (error.errors) {
-            error.errors.forEach((err, index) => {
-                console.error(`Error ${index + 1}:`, err);
-            });
+        if (error && typeof error === 'object') {
+            console.error('Full error:', JSON.stringify(error, null, 2));
+            
+            if ('errors' in error) {
+                const squareError = error;
+                squareError.errors.forEach((err, index) => {
+                    console.error(`Error ${index + 1}:`);
+                    console.error('Detail:', err.detail);
+                    console.error('Code:', err.code);
+                    console.error('Category:', err.category);
+                });
+            }
         }
         
-        throw error;
+        throw new Error(`Payment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 }
 
-// Run the test
+// Run the test with proper error handling
 main()
-    .then(() => console.log('Test completed successfully'))
-    .catch(err => {
-        console.error('Test failed with error:', err.message);
+    .then(() => {
+        console.log('Test completed successfully');
+        process.exit(0);
+    })
+    .catch((err) => {
+        console.error('Test failed:');
+        console.error(err);
         process.exit(1);
     });

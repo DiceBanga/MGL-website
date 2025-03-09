@@ -3,16 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { CreditCard, DollarSign, CheckCircle, AlertCircle, ArrowLeft, Shield, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
+import { createPayment } from '../lib/square';
+import { PaymentDetails, PaymentMetadata } from '../types/payment';
 
-interface PaymentDetails {
-  id: string;
-  type: 'tournament' | 'league';
-  name: string;
-  amount: number;
-  description: string;
-  teamId?: string;
-  eventId?: string;
-  playersIds?: string[];
+declare global {
+  interface Window {
+    Square: any;
+  }
 }
 
 const Payments = () => {
@@ -30,6 +27,8 @@ const Payments = () => {
   const [cardName, setCardName] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [cashAppUsername, setCashAppUsername] = useState('');
+  const [squarePayment, setSquarePayment] = useState<any>(null);
+  const [card, setCard] = useState<any>(null);
 
   useEffect(() => {
     // Get payment details from location state or redirect back
@@ -39,6 +38,39 @@ const Payments = () => {
       navigate('/dashboard');
     }
   }, [location, navigate]);
+
+  useEffect(() => {
+    if (paymentMethod === 'square') {
+      initializeSquare();
+    }
+  }, [paymentMethod]);
+
+  const initializeSquare = async () => {
+    if (!window.Square) {
+      const script = document.createElement('script');
+      script.src = 'https://sandbox.web.squarecdn.com/v1/square.js';
+      script.onload = () => {
+        initializeSquarePayment();
+      };
+      document.body.appendChild(script);
+    } else {
+      initializeSquarePayment();
+    }
+  };
+
+  const initializeSquarePayment = async () => {
+    if (!window.Square) return;
+
+    try {
+      const payments = window.Square.payments(process.env.REACT_APP_SQUARE_APP_ID, process.env.REACT_APP_SQUARE_LOCATION_ID);
+      const card = await payments.card();
+      await card.attach('#card-container');
+      setCard(card);
+    } catch (e) {
+      console.error('Error initializing Square:', e);
+      setError('Failed to initialize payment form');
+    }
+  };
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '');
@@ -126,29 +158,43 @@ const Payments = () => {
   };
 
   const processSquarePayment = async () => {
-    if (!validateCardDetails()) return;
+    if (!card || !paymentDetails || !paymentDetails.eventId || !paymentDetails.teamId) {
+      setError('Missing required payment details');
+      return;
+    }
     
     setLoading(true);
     setError(null);
     
     try {
-      // In a real implementation, you would use Square's SDK to tokenize card details
-      // and send the token to your backend for processing
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const result = await card.tokenize();
+      if (result.status === 'OK') {
+        // Generate unique idempotency key
+        const idempotencyKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
-      // Record payment in database
-      if (paymentDetails) {
-        await recordPayment('square');
+        // Create payment using Square API
+        const payment = await createPayment({
+          sourceId: result.token,
+          amount: paymentDetails.amount,
+          idempotencyKey,
+          note: `Payment for ${paymentDetails.name}`,
+          referenceId: `${paymentDetails.type}_${paymentDetails.eventId}_${paymentDetails.teamId}`
+        });
+
+        // Record payment in database with metadata
+        await recordPayment('square', payment);
+        setSquarePayment(payment);
+        setSuccess(true);
       } else {
-        throw new Error('Payment details not found');
+        throw new Error(result.errors[0].message);
       }
-      
-      setSuccess(true);
-    } catch (err) {
-      console.error('Payment error:', err);
-      setError('Payment processing failed. Please try again.');
+    } catch (error: unknown) {
+      console.error('Payment error:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Payment processing failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -180,28 +226,56 @@ const Payments = () => {
     }
   };
 
-  const recordPayment = async (provider: string) => {
+  const recordPayment = async (provider: string, squarePayment?: any) => {
     if (!user || !paymentDetails) return;
     
+    const metadata = {
+      type: paymentDetails.type,
+      eventId: paymentDetails.eventId!,
+      teamId: paymentDetails.teamId!,
+      playersIds: paymentDetails.playersIds || [],
+      squarePaymentId: squarePayment?.id,
+      receiptUrl: squarePayment?.receiptUrl
+    };
+
     // Record the payment in the database
-    const { error } = await supabase
+    const { error: paymentError } = await supabase
       .from('payments')
       .insert({
         user_id: user.id,
         amount: paymentDetails.amount,
         currency: 'USD',
         payment_method: provider,
-        status: 'completed',
-        payment_id: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        // id, created_at, and updated_at will be automatically set by the database
+        status: squarePayment ? 'completed' : 'pending',
+        payment_id: squarePayment?.id || `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        metadata: {
+          square_response: squarePayment,
+          ...metadata
+        }
       });
       
-    if (error) {
-      console.error('Error recording payment:', error);
+    if (paymentError) {
+      console.error('Error recording payment:', paymentError);
       throw new Error('Failed to record payment');
     }
+
+    // Store additional payment metadata
+    const { error: metadataError } = await supabase
+      .from('payments.metadata')
+      .insert({
+        payment_id: squarePayment?.id || `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        metadata: {
+          ...metadata,
+          square_response: squarePayment
+        }
+      });
+
+    if (metadataError) {
+      console.error('Error recording payment metadata:', metadataError);
+      throw new Error('Failed to record payment metadata');
+    }
     
-    // If this is a tournament or league registration, update the registration status
+    // Update registration status
     if (paymentDetails.eventId && paymentDetails.teamId) {
       if (paymentDetails.type === 'tournament') {
         await supabase
@@ -401,83 +475,9 @@ const Payments = () => {
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Name on Card
+                              Card Details
                             </label>
-                            <input
-                              type="text"
-                              value={cardName}
-                              onChange={(e) => setCardName(e.target.value)}
-                              placeholder="John Doe"
-                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Card Number
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="text"
-                                value={cardNumber}
-                                onChange={handleCardNumberChange}
-                                placeholder="1234 5678 9012 3456"
-                                className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                                required
-                              />
-                              <div className="absolute right-3 top-2.5">
-                                <Lock className="w-5 h-5 text-gray-500" />
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-1">
-                                Expiry Date
-                              </label>
-                              <input
-                                type="text"
-                                value={cardExpiry}
-                                onChange={handleExpiryChange}
-                                placeholder="MM/YY"
-                                className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                                required
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-1">
-                                Security Code
-                              </label>
-                              <input
-                                type="text"
-                                value={cardCVC}
-                                onChange={handleCVCChange}
-                                placeholder="CVC"
-                                className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                                required
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              ZIP Code
-                            </label>
-                            <input
-                              type="text"
-                              value={zipCode}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/\D/g, '');
-                                if (value.length <= 5) {
-                                  setZipCode(value);
-                                }
-                              }}
-                              placeholder="12345"
-                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                              required
-                            />
+                            <div id="card-container" className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white"></div>
                           </div>
                         </div>
                       ) : (
