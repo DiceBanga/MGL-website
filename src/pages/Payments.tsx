@@ -47,28 +47,44 @@ const Payments = () => {
 
   const initializeSquare = async () => {
     if (!window.Square) {
+      console.log('Loading Square SDK...');
       const script = document.createElement('script');
-      script.src = 'https://sandbox.web.squarecdn.com/v1/square.js';
+      script.src = import.meta.env.VITE_SQUARE_ENVIRONMENT === 'production'
+        ? 'https://web.squarecdn.com/v1/square.js'
+        : 'https://sandbox.web.squarecdn.com/v1/square.js';
       script.onload = () => {
+        console.log('Square SDK loaded, initializing payments...');
         initializeSquarePayment();
       };
       document.body.appendChild(script);
     } else {
+      console.log('Square SDK already loaded, initializing payments...');
       initializeSquarePayment();
     }
   };
 
   const initializeSquarePayment = async () => {
-    if (!window.Square) return;
+    if (!window.Square) {
+      console.error('Square SDK not loaded');
+      return;
+    }
 
     try {
-      const payments = window.Square.payments(process.env.REACT_APP_SQUARE_APP_ID, process.env.REACT_APP_SQUARE_LOCATION_ID);
+      console.log('Creating payments instance...');
+      const payments = window.Square.payments(
+        import.meta.env.VITE_SQUARE_APP_ID,
+        import.meta.env.VITE_SQUARE_LOCATION_ID
+      );
+
+      console.log('Creating card instance...');
       const card = await payments.card();
+      console.log('Attaching card to container...');
       await card.attach('#card-container');
       setCard(card);
+      console.log('Card form ready');
     } catch (e) {
       console.error('Error initializing Square:', e);
-      setError('Failed to initialize payment form');
+      setError('Failed to initialize payment form. Please try again.');
     }
   };
 
@@ -293,13 +309,13 @@ const Payments = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (paymentMethod === 'square') {
-      processSquarePayment();
+      await processSquarePayment();
     } else if (paymentMethod === 'cashapp') {
-      processCashAppPayment();
+      await processCashAppPayment();
     }
   };
 
@@ -470,15 +486,50 @@ const Payments = () => {
                       </div>
                     )}
                     
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit} className="space-y-4">
                       {paymentMethod === 'square' ? (
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">
+                              Name on Card
+                            </label>
+                            <input
+                              type="text"
+                              value={cardName}
+                              onChange={(e) => setCardName(e.target.value)}
+                              placeholder="John Doe"
+                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1">
                               Card Details
                             </label>
-                            <div id="card-container" className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white"></div>
+                            <div 
+                              id="card-container" 
+                              className="w-full min-h-[100px] bg-gray-700 border border-gray-600 rounded-md px-4 py-3 text-white"
+                            ></div>
+                            {error && (
+                              <p className="mt-2 text-sm text-red-400">
+                                {error}
+                              </p>
+                            )}
                           </div>
+                          <button
+                            type="submit"
+                            disabled={loading || !card || !cardName.trim()}
+                            className="w-full bg-green-700 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                          >
+                            {loading ? (
+                              <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Processing...
+                              </>
+                            ) : (
+                              <>Pay ${paymentDetails?.amount.toFixed(2)}</>
+                            )}
+                          </button>
                         </div>
                       ) : (
                         <div className="space-y-4">
@@ -506,25 +557,6 @@ const Payments = () => {
                           </div>
                         </div>
                       )}
-                      
-                      <div className="mt-6">
-                        <button
-                          type="submit"
-                          disabled={loading}
-                          className="w-full bg-green-700 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                        >
-                          {loading ? (
-                            <>
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              {paymentMethod === 'square' ? 'Pay with Card' : 'Pay with Cash App'} - ${paymentDetails.amount.toFixed(2)}
-                            </>
-                          )}
-                        </button>
-                      </div>
                     </form>
                   </div>
                 )}

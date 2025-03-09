@@ -17,7 +17,9 @@ export function useAuth() {
     if (!user) return false;
     
     const metadata = user.user_metadata;
-    console.log('User metadata:', metadata); // Debug info
+    if (import.meta.env.DEV) {
+      console.debug('User metadata:', metadata);
+    }
     
     return metadata?.role === 'owner';
   };
@@ -69,6 +71,14 @@ export function useAuth() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (user?.user_metadata) {
+      if (import.meta.env.DEV) {
+        console.debug('User metadata:', user.user_metadata);
+      }
+    }
+  }, [user]);
 
   return { user, isOwner, isAdmin: isAdmin(user), loading } as AuthState & { isAdmin: boolean };
 } 

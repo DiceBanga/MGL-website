@@ -1,13 +1,4 @@
-import { Client, Environment } from 'square';
-import { PaymentMetadata } from '../types/payment';
-
-// Initialize Square client
-const client = new Client({
-  accessToken: import.meta.env.VITE_SQUARE_ACCESS_TOKEN || '',
-  environment: import.meta.env.VITE_SQUARE_ENVIRONMENT === 'production' 
-    ? Environment.Production 
-    : Environment.Sandbox
-});
+import { supabase } from './supabase';
 
 interface CreatePaymentParams {
   sourceId: string;
@@ -25,29 +16,36 @@ export async function createPayment({
   referenceId
 }: CreatePaymentParams) {
   try {
-    if (!import.meta.env.VITE_SQUARE_LOCATION_ID) {
-      throw new Error('Square Location ID is not configured');
-    }
-
-    const response = await client.paymentsApi.createPayment({
-      sourceId,
-      amountMoney: {
-        amount: BigInt(amount * 100), // Convert dollars to cents
-        currency: 'USD'
+    // Call our Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('create-payment', {
+      body: {
+        sourceId,
+        amount,
+        idempotencyKey,
+        note,
+        referenceId
       },
-      idempotencyKey,
-      locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
-      note,
-      referenceId
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
 
-    if (!response?.result?.payment) {
+    if (error) {
+      console.error('Supabase function error:', error);
+      throw new Error(error.message || 'Failed to process payment');
+    }
+
+    if (!data?.payment) {
       throw new Error('Payment creation failed: No payment data received');
     }
 
-    return response.result.payment;
+    return data.payment;
   } catch (error) {
     console.error('Error creating payment:', error);
-    throw error;
+    if (error instanceof Error) {
+      throw new Error(`Payment failed: ${error.message}`);
+    } else {
+      throw new Error('Payment failed: An unexpected error occurred');
+    }
   }
-} 
+}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import Layout from './components/Layout';
 import AuthGuard from './components/AuthGuard';
 import { OwnerRoute } from './components/OwnerRoute';
@@ -68,96 +68,100 @@ import OwnerTournaments from './pages/owner/Tournaments';
 import OwnerNews from './pages/owner/News';
 import OwnerManagement from './pages/owner/Management';
 
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <Layout />,
+    children: [
+      { index: true, element: <Home /> },
+      { path: 'about', element: <About /> },
+      { path: 'contact', element: <Contact /> },
+      { path: 'faq', element: <FAQ /> },
+      { path: 'privacy', element: <Privacy /> },
+      { path: 'terms', element: <Terms /> },
+      
+      // Feature Routes
+      { path: 'games', element: <Games /> },
+      { path: 'schedule', element: <Schedule /> },
+      { path: 'tournaments', element: <Tournaments /> },
+      { path: 'teams', element: <Teams /> },
+      { path: 'players', element: <Players /> },
+      { path: 'stats', element: <Stats /> },
+
+      // Auth Routes
+      { path: 'login', element: <Login /> },
+      { path: 'register', element: <Register /> },
+      { path: 'forgot-password', element: <ForgotPassword /> },
+      { path: 'reset-password', element: <ResetPassword /> },
+      { path: 'email-verification', element: <EmailVerification /> },
+      { path: 'email-verification/success', element: <EmailVerificationSuccess /> },
+      { path: 'email-verification/failed', element: <EmailVerificationFailed /> },
+
+      // Dashboard Routes
+      { 
+        path: 'dashboard', 
+        element: <AuthGuard requireAuth><UserDashboard /></AuthGuard> 
+      },
+      { 
+        path: 'team/:teamId/dashboard', 
+        element: <AuthGuard requireAuth><TeamDashboard /></AuthGuard> 
+      },
+
+      // Profile Routes
+      { path: 'user/:userId', element: <UserProfile /> },
+      { path: 'team/:teamId', element: <TeamProfile /> },
+
+      // Payment Routes
+      { 
+        path: 'payments', 
+        element: <AuthGuard requireAuth><Payments /></AuthGuard> 
+      },
+
+      // Admin Routes
+      {
+        path: 'admin',
+        element: <AuthGuard requireAuth requireAdmin><AdminDashboard /></AuthGuard>,
+        children: [
+          { path: 'users', element: <AdminUsers /> },
+          { path: 'leagues', element: <AdminLeagues /> },
+          { path: 'tournaments', element: <AdminTournaments /> },
+          { path: 'teams', element: <AdminTeams /> },
+          { path: 'players', element: <AdminPlayers /> },
+          { path: 'games', element: <AdminGames /> },
+          { path: 'news', element: <AdminNews /> },
+          { path: 'sponsors', element: <AdminSponsors /> },
+          { path: 'settings', element: <AdminSettings /> },
+          { path: 'site-content', element: <AdminSiteContent /> },
+          { path: 'management', element: <AdminManagement /> }
+        ]
+      },
+
+      // Owner Routes
+      {
+        path: 'owner',
+        element: <OwnerRoute><OwnerDashboard /></OwnerRoute>,
+        children: [
+          { path: 'admins', element: <OwnerManagement /> },
+          { path: 'leagues', element: <OwnerLeagues /> },
+          { path: 'players', element: <OwnerPlayers /> },
+          { path: 'settings', element: <OwnerSettings /> },
+          { path: 'site-content', element: <OwnerSiteContent /> },
+          { path: 'sponsors', element: <OwnerSponsors /> },
+          { path: 'users', element: <OwnerUsers /> },
+          { path: 'teams', element: <OwnerTeams /> },
+          { path: 'tournaments', element: <OwnerTournaments /> },
+          { path: 'news', element: <OwnerNews /> }
+        ]
+      },
+
+      // 404 Route
+      { path: '*', element: <NotFound /> }
+    ]
+  }
+]);
+
 function App() {
-  return (
-    <Routes>
-      <Route element={<Layout />}>
-        {/* Public Routes */}
-        <Route index element={<Home />} />
-        <Route path="about" element={<About />} />
-        <Route path="contact" element={<Contact />} />
-        <Route path="faq" element={<FAQ />} />
-        <Route path="privacy" element={<Privacy />} />
-        <Route path="terms" element={<Terms />} />
-        
-        {/* Feature Routes */}
-        <Route path="games" element={<Games />} />
-        <Route path="schedule" element={<Schedule />} />
-        <Route path="tournaments" element={<Tournaments />} />
-        <Route path="teams" element={<Teams />} />
-        <Route path="players" element={<Players />} />
-        <Route path="stats" element={<Stats />} />
-
-        {/* Auth Routes */}
-        <Route path="login" element={<Login />} />
-        <Route path="register" element={<Register />} />
-        <Route path="forgot-password" element={<ForgotPassword />} />
-        <Route path="reset-password" element={<ResetPassword />} />
-        <Route path="email-verification" element={<EmailVerification />} />
-        <Route path="email-verification/success" element={<EmailVerificationSuccess />} />
-        <Route path="email-verification/failed" element={<EmailVerificationFailed />} />
-
-        {/* Dashboard Routes */}
-        <Route path="dashboard" element={<AuthGuard requireAuth><UserDashboard /></AuthGuard>} />
-        <Route path="team/:teamId/dashboard" element={<AuthGuard requireAuth><TeamDashboard /></AuthGuard>} />
-
-        {/* Profile Routes */}
-        <Route path="user/:userId" element={<UserProfile />} />
-        <Route path="team/:teamId" element={<TeamProfile />} />
-
-        {/* Payment Routes */}
-        <Route path="payments" element={<AuthGuard requireAuth><Payments /></AuthGuard>} />
-
-        {/* Admin Routes - accessible by both admins and owners */}
-        <Route
-          path="/admin/*"
-          element={
-            <AuthGuard requireAuth requireAdmin>
-              <Routes>
-                <Route index element={<AdminDashboard />} />
-                <Route path="users" element={<AdminUsers />} />
-                <Route path="leagues" element={<AdminLeagues />} />
-                <Route path="tournaments" element={<AdminTournaments />} />
-                <Route path="teams" element={<AdminTeams />} />
-                <Route path="players" element={<AdminPlayers />} />
-                <Route path="games" element={<AdminGames />} />
-                <Route path="news" element={<AdminNews />} />
-                <Route path="sponsors" element={<AdminSponsors />} />
-                <Route path="settings" element={<AdminSettings />} />
-                <Route path="site-content" element={<AdminSiteContent />} />
-                <Route path="management" element={<AdminManagement />} />
-              </Routes>
-            </AuthGuard>
-          }
-        />
-
-        {/* Owner Routes */}
-        <Route
-          path="/owner/*"
-          element={
-            <OwnerRoute>
-              <Routes>
-                <Route index element={<OwnerDashboard />} />
-                <Route path="admins" element={<OwnerManagement />} />
-                <Route path="leagues" element={<OwnerLeagues />} />
-                <Route path="players" element={<OwnerPlayers />} />
-                <Route path="settings" element={<OwnerSettings />} />
-                <Route path="site-content" element={<OwnerSiteContent />} />
-                <Route path="sponsors" element={<OwnerSponsors />} />
-                <Route path="users" element={<OwnerUsers />} />
-                <Route path="teams" element={<OwnerTeams />} />
-                <Route path="tournaments" element={<OwnerTournaments />} />
-                <Route path="news" element={<OwnerNews />} />
-              </Routes>
-            </OwnerRoute>
-          }
-        />
-
-        {/* 404 Route */}
-        <Route path="*" element={<NotFound />} />
-      </Route>
-    </Routes>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;
