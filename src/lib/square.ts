@@ -16,25 +16,45 @@ export async function createPayment({
   referenceId
 }: CreatePaymentParams) {
   try {
-    // Call our Supabase Edge Function
-    const { data, error } = await supabase.functions.invoke('create-payment', {
-      body: {
+    // Use direct fetch instead of supabase.functions.invoke
+    const functionUrl = 'https://rwqskykpyjvflbiwgcue.supabase.co/functions/v1/create-payment';
+    
+    // Get the session for auth token
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || ''}`,
+        // Include supabase specific headers
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+      },
+      body: JSON.stringify({
         sourceId,
         amount,
         idempotencyKey,
         note,
         referenceId
-      },
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      })
     });
 
-    if (error) {
-      console.error('Supabase function error:', error);
-      throw new Error(error.message || 'Failed to process payment');
+    if (!response.ok) {
+      // Try to get error details from response
+      let errorText = await response.text();
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorText = errorJson.error || errorText;
+      } catch (e) {
+        // Keep original error text if parsing fails
+      }
+      
+      console.error('Error response from function:', response.status, errorText);
+      throw new Error(`Failed to process payment: ${errorText}`);
     }
 
+    const data = await response.json();
+    
     if (!data?.payment) {
       throw new Error('Payment creation failed: No payment data received');
     }

@@ -25,6 +25,7 @@
     "autoprefixer": "^10.4.16",
     "cross-env": "^7.0.3",
     "postcss": "^8.4.31",
+    "supabase": "^2.15.8",
     "tailwindcss": "^3.3.5",
     "ts-node": "^10.9.2"
   },
@@ -33,6 +34,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:payment": "node scripts/test-payment.js"
+    "test:payment": "node scripts/test-payment.js",
+    "supabase": "supabase"
   }
 }
