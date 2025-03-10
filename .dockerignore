@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.docker
+docker-compose.yaml
+*Dockerfile*
+
+# Node.js dependencies and build files (for frontend)
+**/node_modules
+**/dist
+**/build
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Python related (for backend)
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/*.so
+**/.Python
+**/env/
+**/venv/
+**/.env
+**/.venv
+**/ENV/
+**/.eggs/
+**/*.egg-info/
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+*~ 
