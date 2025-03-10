@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Endpoint Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 20px 10px 20px 0;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #output {
+      background-color: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      min-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .endpoint-list {
+      margin-bottom: 20px;
+    }
+    .endpoint-list li {
+      margin-bottom: 5px;
+      font-family: monospace;
+    }
+    .success {
+      color: #2e7d32;
+      font-weight: bold;
+    }
+    .failure {
+      color: #c62828;
+      font-weight: bold;
+    }
+    code {
+      background-color: #f5f5f5;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>Payment Endpoint Test</h1>
+  
+  <p>This page tests connectivity to your payment backend endpoints. It will try several endpoint URLs and display which ones work.</p>
+  
+  <h2>Endpoints to Test</h2>
+  <ul class="endpoint-list" id="endpointList">
+    <!-- This will be populated by JavaScript -->
+  </ul>
+  
+  <h2>Test Data</h2>
+  <p>The following data will be sent to the endpoints:</p>
+  <pre id="testData">Loading...</pre>
+  
+  <button id="runTest">Run Test</button>
+  <button id="clearResults">Clear Results</button>
+  
+  <h2>Results</h2>
+  <div id="output">Click "Run Test" to start the test.</div>
+  
+  <script type="module">
+    // Import the test function from our TypeScript file
+    // In development, this needs to be compiled by your build system
+    import { testPaymentEndpoint } from './test-payment-endpoint.ts';
+    
+    // Display configuration
+    function displayConfig() {
+      const CONFIG = {
+        // Backend endpoints to test (in order of preference)
+        endpoints: [
+          'http://localhost:8000/api/square-test-payment',
+          'http://localhost:8000/api/payments',
+          'http://localhost:8000/square-test-payment',
+          'http://localhost:8000/payments',
+          'http://127.0.0.1:8000/api/payments',
+          'http://0.0.0.0:8000/api/payments'
+        ],
+        
+        // Test data that simulates a payment form submission
+        testPaymentData: {
+          sourceId: 'cnon:card-nonce-ok', // Test nonce that works in Square sandbox
+          amount: 150,
+          idempotencyKey: `test-${Date.now()}`,
+          note: 'Test payment from frontend test script',
+          referenceId: `test-payment-${Date.now()}`
+        }
+      };
+      
+      // Display endpoints
+      const endpointList = document.getElementById('endpointList');
+      endpointList.innerHTML = '';
+      CONFIG.endpoints.forEach(endpoint => {
+        const li = document.createElement('li');
+        li.textContent = endpoint;
+        endpointList.appendChild(li);
+      });
+      
+      // Display test data
+      document.getElementById('testData').textContent = JSON.stringify(CONFIG.testPaymentData, null, 2);
+    }
+    
+    // Custom console logger that outputs to our div
+    class DivConsole {
+      constructor(outputDiv) {
+        this.outputDiv = outputDiv;
+      }
+      
+      log(...args) {
+        this.appendToOutput('LOG', args);
+        console.log(...args);
+      }
+      
+      warn(...args) {
+        this.appendToOutput('WARN', args, 'orange');
+        console.warn(...args);
+      }
+      
+      error(...args) {
+        this.appendToOutput('ERROR', args, 'red');
+        console.error(...args);
+      }
+      
+      appendToOutput(level, args, color = null) {
+        const line = document.createElement('div');
+        if (color) {
+          line.style.color = color;
+        }
+        
+        // Format the arguments
+        let text = args.map(arg => {
+          if (typeof arg === 'object') {
+            return JSON.stringify(arg, null, 2);
+          }
+          return String(arg);
+        }).join(' ');
+        
+        line.textContent = `[${level}] ${text}`;
+        this.outputDiv.appendChild(line);
+        
+        // Auto-scroll to bottom
+        this.outputDiv.scrollTop = this.outputDiv.scrollHeight;
+      }
+    }
+    
+    // Setup
+    document.addEventListener('DOMContentLoaded', () => {
+      displayConfig();
+      
+      const outputDiv = document.getElementById('output');
+      const divConsole = new DivConsole(outputDiv);
+      
+      // Run test button
+      document.getElementById('runTest').addEventListener('click', async () => {
+        // Clear previous results
+        outputDiv.innerHTML = '';
+        
+        // Replace console methods for this test
+        const originalConsole = { 
+          log: console.log, 
+          warn: console.warn, 
+          error: console.error 
+        };
+        
+        console.log = divConsole.log.bind(divConsole);
+        console.warn = divConsole.warn.bind(divConsole);
+        console.error = divConsole.error.bind(divConsole);
+        
+        try {
+          // Update test data with new timestamps
+          displayConfig();
+          
+          // Run the test
+          const result = await testPaymentEndpoint();
+          
+          // Display final result
+          if (result.endpoint) {
+            const successLine = document.createElement('div');
+            successLine.className = 'success';
+            successLine.textContent = `✅ SUCCESS: Working endpoint found: ${result.endpoint}`;
+            outputDiv.appendChild(successLine);
+          } else {
+            const failureLine = document.createElement('div');
+            failureLine.className = 'failure';
+            failureLine.textContent = '❌ FAILURE: No working endpoints found!';
+            outputDiv.appendChild(failureLine);
+          }
+        } catch (err) {
+          console.error('Test execution error:', err);
+        } finally {
+          // Restore original console
+          console.log = originalConsole.log;
+          console.warn = originalConsole.warn;
+          console.error = originalConsole.error;
+        }
+      });
+      
+      // Clear results button
+      document.getElementById('clearResults').addEventListener('click', () => {
+        outputDiv.innerHTML = 'Results cleared. Click "Run Test" to start the test again.';
+      });
+    });
+  </script>
+</body>
+</html> 

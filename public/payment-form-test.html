@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Form Test</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💳</text></svg>">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+      background-color: #121212;
+      color: #ffffff;
+    }
+    h1, h2, h3 {
+      color: #ffffff;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px;
+    }
+    .form-container {
+      background-color: #1e1e1e;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      background-color: #2a2a2a;
+      color: #fff;
+      font-size: 16px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+    .col {
+      flex: 1;
+    }
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      font-size: 16px;
+      margin: 20px 10px 20px 0;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      color: #666666;
+      cursor: not-allowed;
+    }
+    .card-container {
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 10px;
+      background-color: #2a2a2a;
+    }
+    .test-cards {
+      background-color: #1e1e1e;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .test-card {
+      background-color: #2a2a2a;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    .success {
+      background-color: rgba(76, 175, 80, 0.2);
+      border: 1px solid #4CAF50;
+      color: #4CAF50;
+    }
+    .error {
+      background-color: rgba(244, 67, 54, 0.2);
+      border: 1px solid #f44336;
+      color: #f44336;
+    }
+    .code {
+      font-family: monospace;
+      background-color: #2a2a2a;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      color: #e0e0e0;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Payment Form Test</h1>
+  <p>This page tests the payment form submission to your backend.</p>
+  
+  <div class="form-container">
+    <h2>Payment Information</h2>
+    <form id="paymentForm">
+      <div class="form-group">
+        <label for="amount">Amount ($)</label>
+        <input type="number" id="amount" name="amount" value="10.00" step="0.01" min="1" required>
+      </div>
+      
+      <h3>Credit Card Information</h3>
+      <div class="card-container">
+        <div class="form-group">
+          <label for="cardNumber">Card Number</label>
+          <input type="text" id="cardNumber" name="cardNumber" placeholder="4111 1111 1111 1111" required>
+        </div>
+        
+        <div class="row">
+          <div class="col">
+            <div class="form-group">
+              <label for="expMonth">Expiration Month</label>
+              <select id="expMonth" name="expMonth" required>
+                <option value="01">01</option>
+                <option value="02">02</option>
+                <option value="03">03</option>
+                <option value="04">04</option>
+                <option value="05">05</option>
+                <option value="06">06</option>
+                <option value="07">07</option>
+                <option value="08">08</option>
+                <option value="09">09</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+              </select>
+            </div>
+          </div>
+          <div class="col">
+            <div class="form-group">
+              <label for="expYear">Expiration Year</label>
+              <select id="expYear" name="expYear" required>
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+                <option value="2029">2029</option>
+                <option value="2030">2030</option>
+              </select>
+            </div>
+          </div>
+          <div class="col">
+            <div class="form-group">
+              <label for="cvv">CVV</label>
+              <input type="text" id="cvv" name="cvv" placeholder="123" required>
+            </div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="postalCode">Zip/Postal Code</label>
+          <input type="text" id="postalCode" name="postalCode" placeholder="12345" required>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label for="note">Payment Note (optional)</label>
+        <input type="text" id="note" name="note" placeholder="Invoice #12345">
+      </div>
+      
+      <button type="submit" id="submitButton">Submit Payment</button>
+    </form>
+    
+    <div id="statusMessage" style="display: none;"></div>
+    <div id="responseData" style="display: none;"></div>
+  </div>
+  
+  <div class="test-cards">
+    <h2>Test Card Information</h2>
+    <p>Use these test cards for testing your payment form:</p>
+    
+    <div class="test-card">
+      <h3>Test Success Card</h3>
+      <p>Card Number: <strong>4111 1111 1111 1111</strong></p>
+      <p>Expiration: <strong>Any future date</strong></p>
+      <p>CVV: <strong>Any 3 digits</strong></p>
+    </div>
+    
+    <div class="test-card">
+      <h3>Test Decline Card</h3>
+      <p>Card Number: <strong>4000 0000 0000 0002</strong></p>
+      <p>Expiration: <strong>Any future date</strong></p>
+      <p>CVV: <strong>Any 3 digits</strong></p>
+    </div>
+  </div>
+  
+  <h2>Endpoints Configuration</h2>
+  <p>The form will attempt to submit to these endpoints in the following order:</p>
+  <ol id="endpointsList">
+    <!-- Will be filled by JavaScript -->
+  </ol>
+  
+  <script>
+    // Configuration
+    const CONFIG = {
+      // Backend endpoints to try (in order)
+      endpoints: [
+        'http://localhost:8000/api/payments/create',
+        'http://127.0.0.1:8000/api/payments/create'
+      ],
+      // Request timeout in milliseconds
+      timeout: 15000
+    };
+    
+    // Display endpoints in the UI
+    const endpointsList = document.getElementById('endpointsList');
+    CONFIG.endpoints.forEach(endpoint => {
+      const li = document.createElement('li');
+      li.textContent = endpoint;
+      endpointsList.appendChild(li);
+    });
+    
+    // Create a fetch request with a timeout
+    function fetchWithTimeout(url, options, timeout) {
+      return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Request timed out after ${timeout}ms`)), timeout)
+        )
+      ]);
+    }
+    
+    // Generate a random idempotency key
+    function generateIdempotencyKey() {
+      return `test-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+    }
+    
+    // Show status message
+    function showStatus(message, isError = false) {
+      const statusElement = document.getElementById('statusMessage');
+      statusElement.className = isError ? 'status error' : 'status success';
+      statusElement.innerHTML = message;
+      statusElement.style.display = 'block';
+    }
+    
+    // Show response data
+    function showResponseData(data) {
+      const responseElement = document.getElementById('responseData');
+      responseElement.innerHTML = `
+        <h3>Response Data</h3>
+        <pre class="code">${JSON.stringify(data, null, 2)}</pre>
+      `;
+      responseElement.style.display = 'block';
+    }
+    
+    // Simulate tokenization (in a real app, you'd use Square's SDK)
+    function simulateTokenization(cardData) {
+      // For testing, just return a mock token
+      // In production, you'd use Square's Web Payments SDK
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          // Return a fake source ID (card nonce) that Square accepts in sandbox
+          resolve({
+            sourceId: 'cnon:card-nonce-ok',
+            card: {
+              last4: cardData.cardNumber.slice(-4),
+              brand: 'VISA',
+              postalCode: cardData.postalCode
+            }
+          });
+        }, 500);
+      });
+    }
+    
+    // Try each endpoint until one works
+    async function tryEndpoints(paymentData) {
+      for (const endpoint of CONFIG.endpoints) {
+        try {
+          console.log(`Trying endpoint: ${endpoint}`);
+          
+          const response = await fetchWithTimeout(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(paymentData)
+          }, CONFIG.timeout);
+          
+          console.log(`Response from ${endpoint}: ${response.status}`);
+          
+          // Log full response details
+          const responseHeaders = {};
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+          });
+          console.log('Response headers:', responseHeaders);
+          
+          // Get response text
+          const responseText = await response.text();
+          console.log(`Response body: ${responseText}`);
+          
+          // Try to parse as JSON if possible
+          let data;
+          try {
+            if (responseText) {
+              data = JSON.parse(responseText);
+            } else {
+              data = { message: "Empty response" };
+            }
+          } catch (e) {
+            data = { raw: responseText, parsing_error: e.message };
+          }
+          
+          if (response.ok) {
+            console.log("BACKEND SUBMISSION SUCCESSFUL");
+            return { success: true, endpoint, data };
+          } else {
+            console.log(`Error from ${endpoint}: ${responseText}`);
+          }
+        } catch (error) {
+          console.error(`Failed to connect to ${endpoint}: ${error.message}`);
+        }
+      }
+      
+      console.log("SUBMISSION FAILED");
+      return { success: false };
+    }
+    
+    // Handle form submission
+    document.getElementById('paymentForm').addEventListener('submit', async function(event) {
+      event.preventDefault();
+      
+      // Clear previous messages
+      document.getElementById('statusMessage').style.display = 'none';
+      document.getElementById('responseData').style.display = 'none';
+      
+      // Disable submit button and show loading state
+      const submitButton = document.getElementById('submitButton');
+      const originalButtonText = submitButton.textContent;
+      submitButton.disabled = true;
+      submitButton.innerHTML = '<span class="spinner"></span> Processing...';
+      
+      try {
+        // Get form data
+        const cardData = {
+          cardNumber: document.getElementById('cardNumber').value.replace(/\s/g, ''),
+          expMonth: document.getElementById('expMonth').value,
+          expYear: document.getElementById('expYear').value,
+          cvv: document.getElementById('cvv').value,
+          postalCode: document.getElementById('postalCode').value
+        };
+        
+        // Get other payment details
+        const amount = parseFloat(document.getElementById('amount').value);
+        const note = document.getElementById('note').value;
+        
+        // 1. Simulate card tokenization (would use Square SDK in real implementation)
+        const tokenResult = await simulateTokenization(cardData);
+        console.log('Card tokenized successfully:', tokenResult);
+        
+        // 2. Prepare payment data for backend
+        const paymentData = {
+          sourceId: tokenResult.sourceId,
+          amount: amount * 100, // Convert to cents
+          idempotencyKey: generateIdempotencyKey(),
+          note: note || 'Test payment from form',
+          referenceId: `payment-form-test-${Date.now()}`
+        };
+        
+        // 3. Submit to backend
+        console.log('Submitting payment to backend:', paymentData);
+        const result = await tryEndpoints(paymentData);
+        
+        // 4. Handle result
+        if (result.success) {
+          showStatus(`
+            <h3>✅ Payment Submitted Successfully</h3>
+            <p>The payment was successfully sent to: <strong>${result.endpoint}</strong></p>
+            <p>Card ending in: <strong>${tokenResult.card.last4}</strong></p>
+            <p>Amount: <strong>$${amount.toFixed(2)}</strong></p>
+          `);
+          showResponseData(result.data);
+        } else {
+          showStatus(`
+            <h3>❌ Payment Submission Failed</h3>
+            <p>The payment could not be processed. All endpoints failed.</p>
+            <p>Please check your backend server and logs.</p>
+          `, true);
+        }
+      } catch (error) {
+        console.error('Payment processing error:', error);
+        showStatus(`
+          <h3>❌ Error Processing Payment</h3>
+          <p>Error message: ${error.message}</p>
+        `, true);
+      } finally {
+        // Re-enable submit button
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+      }
+    });
+    
+    // Format credit card number with spaces
+    document.getElementById('cardNumber').addEventListener('input', function(e) {
+      let value = e.target.value.replace(/\D/g, '');
+      value = value.replace(/(.{4})/g, '$1 ').trim();
+      e.target.value = value;
+    });
+    
+    // Format CVV to allow only 3-4 digits
+    document.getElementById('cvv').addEventListener('input', function(e) {
+      e.target.value = e.target.value.replace(/\D/g, '').substring(0, 4);
+    });
+  </script>
+</body>
+</html> 

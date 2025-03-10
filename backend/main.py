@@ -7,6 +7,7 @@ import logging
 import uuid
 import json
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -257,6 +258,14 @@ def square_test_payment(request: PaymentRequest):
             }
         )
 
+# Square test payment endpoint in /api path to match what frontend is looking for
+@app.post("/api/square-test-payment")
+def api_square_test_payment(request: PaymentRequest):
+    """Square payment test endpoint under /api prefix for frontend testing."""
+    logger.info(f"API Square TEST payment request received: {request}")
+    # Just call the same implementation as the non-prefixed endpoint
+    return square_test_payment(request)
+
 # Print out routes and config for debugging
 @app.on_event("startup")
 async def startup_event():
@@ -305,3 +314,39 @@ async def debug_request(request: Request):
 def square_test():
     logger.info("Square TEST endpoint accessed via GET")
     return {"status": "ok", "message": "Square test endpoint is working"}
+
+# Standard payments endpoint in /api path for frontend compatibility
+@app.post("/api/payments")
+def api_payments(request: PaymentRequest):
+    """Standard payments endpoint under /api prefix for frontend compatibility."""
+    logger.info(f"API Payments endpoint request received: {request}")
+    # Just call the same implementation as the non-prefixed endpoint
+    return create_payment(request)
+
+# Add this endpoint after your existing endpoints
+@app.post("/api/payment-test")
+async def test_payment(payment: PaymentRequest):
+    """Test endpoint that logs request data but doesn't make real API calls"""
+    print("=========== TEST PAYMENT REQUEST ===========")
+    print(f"Payment source ID: {payment.sourceId}")
+    print(f"Amount: {payment.amount}")
+    print(f"Idempotency key: {payment.idempotencyKey}")
+    print(f"Note: {payment.note}")
+    print(f"Reference ID: {payment.referenceId}")
+    print("============================================")
+    
+    # Return success response without calling Square API
+    return {
+        "success": True,
+        "message": "Test payment received successfully!",
+        "payment_id": f"test-{payment.idempotencyKey}",
+        "created_at": datetime.now().isoformat(),
+        "status": "APPROVED",
+        "amount": payment.amount,
+        "card": {
+            "last4": "1111",
+            "brand": "VISA",
+            "exp_month": "12",
+            "exp_year": "2025"
+        }
+    }
