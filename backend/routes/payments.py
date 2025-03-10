@@ -13,7 +13,7 @@ class PaymentRequest(BaseModel):
     note: Optional[str] = None
     referenceId: Optional[str] = None
 
-@router.post("/api/payments")
+@router.post("/payments")
 async def create_payment(request: PaymentRequest):
     try:
         # Import here to avoid circular imports
