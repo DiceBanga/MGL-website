@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal CORS Test</title>
+</head>
+<body>
+    <h1>Minimal CORS Test</h1>
+    <button onclick="testPing()">Test Ping</button>
+    <button onclick="testPayment()">Test Payment</button>
+    <div id="result" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;"></div>
+
+    <script>
+        function testPing() {
+            console.log('Testing ping endpoint...');
+            document.getElementById('result').innerText = 'Testing ping...';
+            
+            fetch('http://localhost:8000/ping')
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Ping response:', data);
+                    document.getElementById('result').innerText = 'Success: ' + JSON.stringify(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('result').innerText = 'Error: ' + error.message;
+                });
+        }
+
+        function testPayment() {
+            console.log('Testing payment endpoint...');
+            document.getElementById('result').innerText = 'Testing payment...';
+            
+            fetch('http://localhost:8000/payments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    amount: 10.99,
+                    note: 'Test payment'
+                })
+            })
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Payment response:', data);
+                    document.getElementById('result').innerText = 'Success: ' + JSON.stringify(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('result').innerText = 'Error: ' + error.message;
+                });
+        }
+    </script>
+</body>
+</html> 

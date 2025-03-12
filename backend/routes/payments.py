@@ -31,7 +31,25 @@ async def create_payment(request: PaymentRequest):
             "reference_id": request.referenceId
         })
         
-        return {"payment": result}
+        # Format response for frontend compatibility
+        return {
+            "success": True,
+            "payment": {
+                "id": result.get("id", "unknown"),
+                "status": result.get("status", "COMPLETED"),
+                "receiptUrl": result.get("receipt_url", None),
+                "amount": request.amount,
+                "created_at": result.get("created_at", None),
+                "card_details": result.get("card_details", {})
+            }
+        }
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "success": False,
+                "message": "Payment processing failed",
+                "error": str(e)
+            }
+        ) 

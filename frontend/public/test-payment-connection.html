@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment API Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            min-height: 200px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Payment API Connection Test</h1>
+
+    <div>
+        <h2>Test Endpoints</h2>
+        <button onclick="testEndpoint('/payments')">Test /payments</button>
+        <button onclick="testEndpoint('/api/payments')">Test /api/payments</button>
+        <button onclick="testEndpoint('/api/payments/process')">Test /api/payments/process</button>
+        <button onclick="testEndpoint('/api/payment-test')">Test /api/payment-test</button>
+    </div>
+
+    <div id="results">
+        <p>Click a button to test an endpoint</p>
+    </div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        function appendResult(message, isError = false) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            p.className = isError ? 'error' : 'success';
+            resultsDiv.appendChild(p);
+        }
+        
+        async function testEndpoint(endpoint) {
+            const baseUrl = 'http://localhost:8000';
+            const url = baseUrl + endpoint;
+            
+            // Test data
+            const testData = {
+                sourceId: 'cnon:card-nonce-ok',
+                amount: 10.99,
+                idempotencyKey: `test-${Date.now()}`,
+                note: 'Test payment from connection test',
+                referenceId: `ref-${Date.now()}`
+            };
+            
+            appendResult(`Testing endpoint: ${url}...`);
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    appendResult(`✅ Success! Endpoint ${endpoint} is working!`);
+                    appendResult(`Response: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    const error = await response.text();
+                    appendResult(`❌ Error with endpoint ${endpoint}: ${response.status} ${response.statusText}`, true);
+                    appendResult(`Error details: ${error}`, true);
+                }
+            } catch (error) {
+                appendResult(`❌ Network error with endpoint ${endpoint}: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html> 

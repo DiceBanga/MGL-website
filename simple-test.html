@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple CORS Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        button { padding: 10px; margin: 10px 0; }
+        #result { padding: 10px; border: 1px solid #ddd; min-height: 100px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Simple CORS Test</h1>
+    <button onclick="testPing()">Test Ping</button>
+    <button onclick="testPayment()">Test Payment</button>
+    <div id="result">Results will appear here...</div>
+
+    <script>
+        const baseUrl = 'http://localhost:8000';
+
+        async function testPing() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing ping...';
+            
+            try {
+                console.log('Fetching from', `${baseUrl}/ping`);
+                
+                const response = await fetch(`${baseUrl}/ping`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <h3>Success!</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                    console.log('Ping success:', data);
+                } else {
+                    resultDiv.innerHTML = `
+                        <h3>Error: ${response.status} ${response.statusText}</h3>
+                    `;
+                    console.error('Ping failed:', response);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3>Error</h3>
+                    <p>${error.message}</p>
+                `;
+                console.error('Ping exception:', error);
+            }
+        }
+
+        async function testPayment() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Sending test payment...';
+            
+            try {
+                const testData = {
+                    sourceId: 'test-source',
+                    amount: 9.99,
+                    note: 'Simple test payment'
+                };
+                
+                console.log('Posting to', `${baseUrl}/test-payment`, testData);
+                
+                const response = await fetch(`${baseUrl}/test-payment`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <h3>Payment Success!</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                    console.log('Payment success:', data);
+                } else {
+                    resultDiv.innerHTML = `
+                        <h3>Payment Error: ${response.status} ${response.statusText}</h3>
+                    `;
+                    console.error('Payment failed:', response);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3>Payment Error</h3>
+                    <p>${error.message}</p>
+                `;
+                console.error('Payment exception:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

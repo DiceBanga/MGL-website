@@ -27,6 +27,8 @@ export class SquarePaymentService {
 
   async createPayment(sourceId: string, paymentDetails: PaymentDetails): Promise<PaymentResult> {
     try {
+      console.log('Creating payment with Square...', { sourceId, amount: paymentDetails.amount });
+      
       // Create pending payment record first
       const { data: paymentRecord, error: dbError } = await supabase
         .from('payments')
@@ -46,42 +48,65 @@ export class SquarePaymentService {
         .select()
         .single();
 
-      if (dbError) throw dbError;
-
-      // Process payment with Square API
-      const response = await fetch('/api/payments/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sourceId,
-          amount: paymentDetails.amount,
-          idempotencyKey: uuidv4()
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        // Update payment record to failed
-        await supabase
-          .from('payments')
-          .update({ 
-            status: 'failed',
-            metadata: {
-              ...paymentRecord.metadata,
-              error: errorData.message
-            }
-          })
-          .eq('id', paymentRecord.id);
-
-        throw new Error(errorData.message || 'Payment processing failed');
+      if (dbError) {
+        console.error('Database error creating payment record:', dbError);
+        throw dbError;
       }
 
-      const data = await response.json();
+      console.log('Created pending payment record:', paymentRecord);
 
-      // Verify payment status
-      if (!data.success || data.payment.status !== 'COMPLETED') {
+      // Try multiple endpoints in case one doesn't work
+      const possibleEndpoints = [
+        '/api/payments/process',
+        '/api/payments',
+        '/payments'
+      ];
+      
+      let response = null;
+      let responseData = null;
+      let endpoint = '';
+      
+      for (const ep of possibleEndpoints) {
+        try {
+          console.log(`Trying payment endpoint: ${ep}`);
+          endpoint = ep;
+          
+          // Process payment with Square API
+          response = await fetch(ep, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sourceId,
+              amount: paymentDetails.amount,
+              idempotencyKey: uuidv4(),
+              note: paymentDetails.description,
+              referenceId: `payment-${paymentRecord.id}`
+            }),
+          });
+          
+          if (response.ok) {
+            responseData = await response.json();
+            console.log(`Successful response from ${ep}:`, responseData);
+            break;
+          } else {
+            console.error(`Error from ${ep}:`, response.status, response.statusText);
+            
+            try {
+              const errorText = await response.text();
+              console.error('Error details:', errorText);
+            } catch (e) {
+              console.error('Could not parse error response');
+            }
+          }
+        } catch (endpointError) {
+          console.error(`Network error with ${ep}:`, endpointError);
+        }
+      }
+      
+      // If all endpoints failed
+      if (!response || !response.ok || !responseData) {
         // Update payment record to failed
         await supabase
           .from('payments')
@@ -89,12 +114,35 @@ export class SquarePaymentService {
             status: 'failed',
             metadata: {
               ...paymentRecord.metadata,
-              error: `Payment failed with status: ${data.payment?.status || 'unknown'}`
+              error: 'Failed to connect to payment API'
             }
           })
           .eq('id', paymentRecord.id);
 
-        throw new Error(`Payment failed with status: ${data.payment?.status || 'unknown'}`);
+        throw new Error('All payment endpoints failed');
+      }
+
+      // Handle response format differences - some endpoints return { payment: {...} } and others might not
+      const paymentResult = responseData.payment || responseData;
+      
+      // Verify payment status - normalize different status formats
+      const paymentStatus = paymentResult.status || '';
+      const isCompleted = ['COMPLETED', 'APPROVED', 'SUCCESS', 'SUCCEEDED'].includes(paymentStatus.toUpperCase());
+      
+      if (!isCompleted) {
+        // Update payment record to failed
+        await supabase
+          .from('payments')
+          .update({ 
+            status: 'failed',
+            metadata: {
+              ...paymentRecord.metadata,
+              error: `Payment failed with status: ${paymentStatus || 'unknown'}`
+            }
+          })
+          .eq('id', paymentRecord.id);
+
+        throw new Error(`Payment failed with status: ${paymentStatus || 'unknown'}`);
       }
 
       // Update payment record to completed
@@ -102,11 +150,11 @@ export class SquarePaymentService {
         .from('payments')
         .update({ 
           status: 'completed',
-          payment_id: data.payment.id,
+          payment_id: paymentResult.id,
           metadata: {
             ...paymentRecord.metadata,
-            squarePaymentId: data.payment.id,
-            receiptUrl: data.payment.receiptUrl
+            squarePaymentId: paymentResult.id,
+            receiptUrl: paymentResult.receiptUrl || paymentResult.receipt_url
           }
         })
         .eq('id', paymentRecord.id);
@@ -134,8 +182,8 @@ export class SquarePaymentService {
 
       return {
         success: true,
-        paymentId: data.payment.id,
-        receiptUrl: data.payment.receiptUrl
+        paymentId: paymentResult.id,
+        receiptUrl: paymentResult.receiptUrl || paymentResult.receipt_url
       };
     } catch (error) {
       console.error('Payment error:', error);

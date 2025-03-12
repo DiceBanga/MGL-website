@@ -31,44 +31,25 @@ def ping():
 def hello():
     return {"message": "Hello World"}
 
-# Add CORS middleware
+# ------------- CORS CONFIGURATION -------------
+# Replace the existing CORS middleware with a simpler approach
+origins = [
+    "http://localhost",
+    "http://localhost:5500",
+    "http://127.0.0.1",
+    "http://127.0.0.1:5500",
+    "*"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for testing
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Also add manual CORS headers to every response for extra certainty
-@app.middleware("http")
-async def cors_middleware(request: Request, call_next):
-    logger.info(f"Request path: {request.url.path}")
-    logger.info(f"Request method: {request.method}")
-    
-    # Handle preflight OPTIONS request
-    if request.method == "OPTIONS":
-        logger.info("Handling OPTIONS preflight request")
-        return Response(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "http://localhost:3001",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Max-Age": "86400",
-            },
-        )
-    
-    # For regular requests, process the request and add CORS headers to response
-    response = await call_next(request)
-    
-    # Add CORS headers to every response
-    origin = request.headers.get("origin", "http://localhost:3001")
-    response.headers["Access-Control-Allow-Origin"] = origin
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    
-    return response
+# ------------- END CORS CONFIGURATION -------------
 
 # Initialize Square client with sandbox environment
 square_client = Client(
@@ -320,6 +301,14 @@ def square_test():
 def api_payments(request: PaymentRequest):
     """Standard payments endpoint under /api prefix for frontend compatibility."""
     logger.info(f"API Payments endpoint request received: {request}")
+    # Just call the same implementation as the non-prefixed endpoint
+    return create_payment(request)
+
+# Add API endpoint for payments/process that the frontend is trying to use
+@app.post("/api/payments/process")
+def api_payments_process(request: PaymentRequest):
+    """Process payments endpoint with /api/payments/process path for frontend SquarePaymentService compatibility."""
+    logger.info(f"API Payments process endpoint request received: {request}")
     # Just call the same implementation as the non-prefixed endpoint
     return create_payment(request)
 
