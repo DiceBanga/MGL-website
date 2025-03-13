@@ -1,0 +1,7 @@
+{
+  "sourceId": "test-card-nonce",
+  "amount": 10.00,
+  "idempotencyKey": "test-payment-key",
+  "note": "Test payment",
+  "referenceId": "test-payment-reference"
+} 

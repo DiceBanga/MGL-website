@@ -1,4 +1,4 @@
-import { payments } from '@square/web-payments-sdk';
+import { PaymentForm } from 'react-square-web-payments-sdk';
 import { supabase } from '../lib/supabase';
 import { paymentConfig } from '../config/payments';
 
@@ -19,80 +19,48 @@ export class PaymentService {
 
   async processPayment(sourceId: string, amount: number, zipCode: string) {
     try {
-      console.log('Starting payment process:', { amount, zipCode });
-      
-      // First record the pending payment in Supabase
-      const { data: paymentRecord, error: dbError } = await supabase
-        .from('payments')
-        .insert({
-          amount,
-          payment_method: 'square',
-          status: 'pending',
-          currency: 'USD'
-        })
-        .select()
-        .single();
-
-      console.log('Supabase payment record:', { paymentRecord, error: dbError });
-
-      if (dbError) {
-        console.error('Supabase error:', dbError);
-        throw new Error('Failed to create payment record');
+      if (!this.validatePaymentAmount(amount)) {
+        return {
+          success: false,
+          error: { message: 'Invalid payment amount' }
+        };
       }
 
-      // Process payment with Square
-      console.log('Sending request to Square API:', {
-        sourceId,
-        amount,
-        locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
-        zipCode,
-        paymentId: paymentRecord.id
-      });
+      if (!this.validateZipCode(zipCode)) {
+        return {
+          success: false,
+          error: { message: 'Invalid ZIP code' }
+        };
+      }
 
-      const response = await fetch('/api/payments/square', {
+      const response = await fetch('/api/payments', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           sourceId,
           amount,
-          locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
-          zipCode,
-          paymentId: paymentRecord.id
-        }),
+          zipCode
+        })
       });
 
       const data = await response.json();
-      console.log('Square API response:', { status: response.status, data });
-      
-      if (!response.ok) {
-        console.error('Payment failed:', data);
-        // Update payment status to failed
-        const { error: updateError } = await supabase
-          .from('payments')
-          .update({ status: 'failed' })
-          .eq('id', paymentRecord.id);
-        
-        console.log('Updated payment status to failed:', { error: updateError });
-        throw new Error(data.error || 'Payment processing failed');
-      }
-
-      // Update payment status to completed
-      const { error: completeError } = await supabase
-        .from('payments')
-        .update({ 
-          status: 'completed',
-          payment_id: data.payment.id
-        })
-        .eq('id', paymentRecord.id);
-
-      console.log('Updated payment status to completed:', { error: completeError });
-      return data;
+      return response.ok ? { success: true, payment: data } : { success: false, error: data.error };
     } catch (error) {
-      console.error('Payment processing error:', error);
-      throw error;
+      return {
+        success: false,
+        error: { message: error instanceof Error ? error.message : 'Payment processing failed' }
+      };
     }
+  }
+
+  private validatePaymentAmount(amount: number): boolean {
+    return amount > 0 && Number.isFinite(amount) && Number(amount.toFixed(2)) === amount;
+  }
+
+  private validateZipCode(zipCode: string): boolean {
+    return /^\d{5}$/.test(zipCode);
   }
 }
 

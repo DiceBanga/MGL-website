@@ -147,34 +147,112 @@ Contains all server-side code:
 3. Access the application at `http://localhost:3000`
 
 ### Running Tests
-The project includes several test utilities:
 
-1. Frontend tests:
+#### Prerequisites for Testing
+
+1. **Environment Variables**
+   - Make sure your `.env` files are properly configured with test credentials
+   - For Square tests, use sandbox credentials:
+     ```env
+     VITE_SQUARE_APP_ID=your_sandbox_app_id
+     VITE_SQUARE_LOCATION_ID=your_sandbox_location_id
+     SQUARE_ACCESS_TOKEN=your_sandbox_access_token
+     SQUARE_ENVIRONMENT=sandbox
+     ```
+
+2. **Dependencies**
+   - Install required dependencies:
+     ```bash
+     cd frontend
+     npm install react-square-web-payments-sdk
+     ```
+
+3. **Backend Requirements**
+   - The backend server does NOT need to be running for unit tests
+   - For integration tests that test API endpoints, start the backend:
+     ```bash
+     cd backend
+     python -m uvicorn main:app --reload
+     ```
+
+#### Running Different Types of Tests
+
+1. **Frontend Unit Tests**
    ```bash
-   npm run test
+   cd frontend
+   npm test
    ```
+   This includes:
+   - Payment form validation
+   - Square SDK component tests
+   - Utility function tests
 
-2. Payment integration tests:
+2. **Frontend Integration Tests**
    ```bash
-   npm run test:payment
-   ```
+   # Terminal 1: Start backend
+   cd backend
+   python -m uvicorn main:app --reload
 
-3. Backend tests:
-   ```bash
-   npm run test:backend
+   # Terminal 2: Run tests
+   cd frontend
+   npm test
    ```
+   This includes:
+   - API endpoint tests
+   - Payment processing tests
+   - CORS validation
 
-4. Run all tests:
-   ```bash
-   npm run test:all
-   ```
-
-5. Individual backend tests:
+3. **Backend Tests**
    ```bash
    cd backend
-   python -m tests.test_database
-   python -m tests.test_square_payment
+   python -m pytest tests/
    ```
+
+4. **Coverage Reports**
+   ```bash
+   # Frontend coverage
+   cd frontend
+   npm run test:coverage
+
+   # Backend coverage
+   cd backend
+   python -m pytest tests/ --cov=. --cov-report=html
+   ```
+
+#### Test Categories
+
+1. **Unit Tests**
+   - Payment form validation
+   - Square SDK component tests
+   - Database operations
+   - Utility functions
+
+2. **Integration Tests**
+   - API endpoints
+   - Payment processing
+   - CORS configuration
+
+3. **End-to-End Tests**
+   - Complete payment flow
+   - User interactions
+   - Error handling
+
+#### Troubleshooting Tests
+
+1. **Square SDK Issues**
+   - Verify Square SDK is installed: `npm list react-square-web-payments-sdk`
+   - Check sandbox credentials in `.env`
+   - Ensure you're using test card numbers (e.g., 4111 1111 1111 1111)
+
+2. **API Endpoint Issues**
+   - Check if backend is running
+   - Verify CORS configuration
+   - Check network tab for request/response details
+
+3. **Database Issues**
+   - Verify database connection
+   - Check test database exists
+   - Ensure no conflicting operations
 
 ### Production
 1. Build the frontend:
