@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 /**
  * Test a single endpoint
  */
-async function testEndpoint(url: string, data: any): Promise<{success: boolean, data?: any, error?: any}> {
+async function testEndpoint(url: string, data: any, method: string = 'POST'): Promise<{success: boolean, data?: any, error?: any}> {
   try {
     // First, check if the endpoint is reachable with an OPTIONS request (preflight)
     const optionsResponse = await fetch(url, {
@@ -14,11 +14,19 @@ async function testEndpoint(url: string, data: any): Promise<{success: boolean, 
       }
     });
     
-    if (!optionsResponse.ok) {
+    // For OPTIONS requests, we only care about the status code and CORS headers
+    if (method === 'OPTIONS') {
       return {
-        success: false,
-        error: {
-          message: `OPTIONS preflight failed: ${optionsResponse.status} ${optionsResponse.statusText}`
+        success: optionsResponse.ok && 
+                optionsResponse.headers.get('Access-Control-Allow-Origin') !== null &&
+                optionsResponse.headers.get('Access-Control-Allow-Methods') !== null,
+        data: {
+          status: optionsResponse.status,
+          headers: {
+            'Access-Control-Allow-Origin': optionsResponse.headers.get('Access-Control-Allow-Origin'),
+            'Access-Control-Allow-Methods': optionsResponse.headers.get('Access-Control-Allow-Methods'),
+            'Access-Control-Allow-Headers': optionsResponse.headers.get('Access-Control-Allow-Headers')
+          }
         }
       };
     }
@@ -56,6 +64,16 @@ async function testEndpoint(url: string, data: any): Promise<{success: boolean, 
       data: responseData
     };
   } catch (error: any) {
+    if (error.message.includes('Failed to fetch')) {
+      console.warn('Backend server appears to be offline');
+      return {
+        success: false,
+        error: {
+          message: 'Backend server offline',
+          original: error.message
+        }
+      };
+    }
     return {
       success: false,
       error: {
@@ -82,25 +100,29 @@ describe('Payment Endpoint Tests', () => {
 
   beforeAll(() => {
     console.log('\nNote: These tests require the backend server to be running.');
-    console.log('Start the server with: npm run backend:dev\n');
+    console.log('Start the server with: cd backend && python -m uvicorn main:app --reload\n');
   });
 
   endpoints.forEach(endpoint => {
     describe(`Testing endpoint: ${endpoint}`, () => {
       it('should handle OPTIONS preflight request', async () => {
-        const result = await testEndpoint(endpoint, testData);
-        if (!result.success && result.error?.message?.includes('Failed to fetch')) {
+        const result = await testEndpoint(endpoint, testData, 'OPTIONS');
+        if (result.error?.message === 'Backend server offline') {
           console.warn(`Backend server not running at ${endpoint}. Skipping test.`);
-          return true; // Skip test if server not running
+          return;
         }
         expect(result.success).toBe(true);
+        if (result.data) {
+          expect(result.data.headers['Access-Control-Allow-Origin']).toBeDefined();
+          expect(result.data.headers['Access-Control-Allow-Methods']).toBeDefined();
+        }
       });
 
       it('should process payment request', async () => {
-        const result = await testEndpoint(endpoint, testData);
-        if (!result.success && result.error?.message?.includes('Failed to fetch')) {
+        const result = await testEndpoint(endpoint, testData, 'POST');
+        if (result.error?.message === 'Backend server offline') {
           console.warn(`Backend server not running at ${endpoint}. Skipping test.`);
-          return true; // Skip test if server not running
+          return;
         }
         expect(result.success).toBe(true);
         expect(result.data).toBeDefined();
@@ -108,10 +130,10 @@ describe('Payment Endpoint Tests', () => {
 
       it('should handle invalid payment data', async () => {
         const invalidData = { ...testData, amount: -100 };
-        const result = await testEndpoint(endpoint, invalidData);
-        if (!result.success && result.error?.message?.includes('Failed to fetch')) {
+        const result = await testEndpoint(endpoint, invalidData, 'POST');
+        if (result.error?.message === 'Backend server offline') {
           console.warn(`Backend server not running at ${endpoint}. Skipping test.`);
-          return true; // Skip test if server not running
+          return;
         }
         expect(result.success).toBe(false);
         expect(result.error).toBeDefined();

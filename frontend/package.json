@@ -3,6 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "test:payment": "node scripts/test-payment.js",
+    "supabase": "supabase"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "@types/node": "^20.0.0",
@@ -15,6 +26,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
+    "react-square-web-payments-sdk": "^3.2.3",
     "recharts": "^2.10.1",
     "square": "^35.0.0",
     "typescript": "^5.0.0",
@@ -22,6 +34,8 @@
     "zustand": "^4.5.1"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.8",
+    "@vitest/ui": "^3.0.8",
     "autoprefixer": "^10.4.16",
     "cross-env": "^7.0.3",
     "postcss": "^8.4.31",
@@ -29,15 +43,5 @@
     "tailwindcss": "^3.3.5",
     "ts-node": "^10.9.2",
     "vitest": "^3.0.8"
-  },
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "test": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui",
-    "test:payment": "node scripts/test-payment.js",
-    "supabase": "supabase"
   }
 }
