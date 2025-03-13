@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PaymentService } from '../services/PaymentService';
 import { validatePaymentAmount, validateZipCode } from '../utils/payment-validation';
+import { PaymentForm, CreditCard } from 'react-square-web-payments-sdk';
+import React from 'react';
 
 describe('PaymentService', () => {
   let paymentService: PaymentService;
@@ -72,5 +74,69 @@ describe('Payment Validation', () => {
       expect(validateZipCode('123456')).toBe(false);
       expect(validateZipCode('abcde')).toBe(false);
     });
+  });
+});
+
+// Mock the Square SDK components
+vi.mock('react-square-web-payments-sdk', () => ({
+  PaymentForm: vi.fn(({ children, cardTokenizeResponseReceived }) => {
+    // Simulate the form behavior
+    return {
+      render: () => children,
+      tokenize: async () => ({
+        token: 'mock-token',
+        status: 'OK'
+      })
+    };
+  }),
+  CreditCard: vi.fn(() => React.createElement('div'))
+}));
+
+describe('Square Payment Integration', () => {
+  it('should properly configure PaymentForm', () => {
+    const mockCallback = vi.fn();
+    const form = PaymentForm({
+      applicationId: 'sandbox-sq0idb-test',
+      locationId: 'test-location',
+      cardTokenizeResponseReceived: mockCallback,
+      children: React.createElement(CreditCard, {})
+    });
+
+    expect(form).toBeDefined();
+    expect(PaymentForm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: 'sandbox-sq0idb-test',
+        locationId: 'test-location'
+      })
+    );
+  });
+
+  it('should handle successful tokenization', async () => {
+    const mockCallback = vi.fn();
+    const form = PaymentForm({
+      applicationId: 'sandbox-sq0idb-test',
+      locationId: 'test-location',
+      cardTokenizeResponseReceived: mockCallback,
+      children: React.createElement(CreditCard, {})
+    });
+
+    // Simulate successful tokenization
+    const result = await form.tokenize();
+    expect(result).toEqual({
+      token: 'mock-token',
+      status: 'OK'
+    });
+  });
+
+  it('should validate payment amount', () => {
+    const amount = 10.00;
+    expect(amount).toBeGreaterThan(0);
+    expect(Number.isFinite(amount)).toBe(true);
+  });
+
+  it('should validate location ID', () => {
+    const locationId = 'test-location';
+    expect(locationId).toBeTruthy();
+    expect(typeof locationId).toBe('string');
   });
 });

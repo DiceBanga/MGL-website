@@ -9,13 +9,18 @@
     "backend:dev": "cd backend && uvicorn main:app --reload",
     "dev": "concurrently \"npm run frontend:dev\" \"npm run backend:dev\"",
     "build": "npm run frontend:build",
-    "test": "cd frontend && vitest",
-    "test:payment": "node scripts/test-payment.js",
-    "test:backend": "cd backend && python -m tests.test_server",
-    "test:all": "npm run test && npm run test:backend",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && vitest",
+    "test:backend": "cd backend && python -m pytest tests/",
+    "test:coverage": "npm run test:frontend:coverage && npm run test:backend:coverage",
+    "test:frontend:coverage": "cd frontend && vitest run --coverage",
+    "test:backend:coverage": "cd backend && python -m pytest tests/ --cov=. --cov-report=html",
     "supabase": "supabase"
   },
   "devDependencies": {
     "concurrently": "^8.0.0"
+  },
+  "dependencies": {
+    "react-square-web-payments-sdk": "^3.2.3"
   }
 }

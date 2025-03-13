@@ -11,103 +11,121 @@ from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Change to DEBUG level for more details
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI(debug=True)  # Enable debug mode
-
-# Add a simple test route that should always work
-@app.get("/ping")
-def ping():
-    logger.info("PING endpoint was accessed!")
-    return {"ping": "pong", "time": str(uuid.uuid4())}
-
-# Simple test route to verify endpoint registration
-@app.get("/hello")
-def hello():
-    return {"message": "Hello World"}
+app = FastAPI(
+    title="Square Payment API",
+    description="API for processing Square payments",
+    version="1.0.0",
+    debug=True
+)
 
 # ------------- CORS CONFIGURATION -------------
-# Replace the existing CORS middleware with a simpler approach
-origins = [
-    "http://localhost",
-    "http://localhost:5500",
-    "http://127.0.0.1",
-    "http://127.0.0.1:5500",
-    "*"
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
-
 # ------------- END CORS CONFIGURATION -------------
 
-# Initialize Square client with sandbox environment
-square_client = Client(
-    access_token=os.getenv('SQUARE_ACCESS_TOKEN'),
-    environment=os.getenv('SQUARE_ENVIRONMENT', 'sandbox')  # Make sure this is 'sandbox' for testing
-)
+# ------------- HEALTH CHECK ENDPOINTS -------------
+@app.get("/")
+def root():
+    """Root endpoint providing API information"""
+    return {
+        "name": "Square Payment API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "main": "/api/payments",
+            "test": "/api/payments/test",
+            "health": "/ping",
+            "debug": "/debug"
+        }
+    }
 
-# Define the payment request model
+@app.get("/ping")
+def ping():
+    """Health check endpoint"""
+    logger.info("Health check ping received")
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "id": str(uuid.uuid4())
+    }
+# ------------- END HEALTH CHECK ENDPOINTS -------------
+
+# ------------- MODELS -------------
 class PaymentRequest(BaseModel):
     sourceId: str
     amount: float
     idempotencyKey: str = None
     note: str = None
     referenceId: str = None
+# ------------- END MODELS -------------
 
-# Square Payment Endpoint
-@app.post("/payments")
-def create_payment(request: PaymentRequest):
+# ------------- PAYMENT ENDPOINTS -------------
+@app.post("/api/payments")
+async def create_payment(request: PaymentRequest):
+    """Main payment processing endpoint"""
     logger.info(f"Payment request received: {request}")
     
-    # Log environment variables for debugging
-    logger.info(f"SQUARE_ENVIRONMENT: {os.getenv('SQUARE_ENVIRONMENT')}")
-    logger.info(f"SQUARE_LOCATION_ID: {os.getenv('SQUARE_LOCATION_ID')}")
-    
-    # Check for access token without logging the full token (security)
-    access_token = os.getenv('SQUARE_ACCESS_TOKEN')
-    logger.info(f"SQUARE_ACCESS_TOKEN present: {bool(access_token)}")
-    
-    # Generate idempotency key if not provided
-    idempotency_key = request.idempotencyKey or str(uuid.uuid4())
-    logger.info(f"Using idempotency key: {idempotency_key}")
-    
-    # Convert amount to cents (integer)
-    amount_in_cents = int(request.amount * 100)
-    
-    # Create payment body
-    body = {
-        "source_id": request.sourceId,
-        "amount_money": {
-            "amount": amount_in_cents,
-            "currency": "USD"
-        },
-        "idempotency_key": idempotency_key,
-        "location_id": os.getenv('SQUARE_LOCATION_ID')
-    }
-    
-    # Add optional fields if present
-    if request.note:
-        body["note"] = request.note
-    if request.referenceId:
-        body["reference_id"] = request.referenceId
-    
-    logger.info(f"Calling Square API with body: {json.dumps(body, default=str)}")
-    
     try:
+        # Log environment variables for debugging
+        logger.info(f"SQUARE_ENVIRONMENT: {os.getenv('SQUARE_ENVIRONMENT')}")
+        logger.info(f"SQUARE_LOCATION_ID: {os.getenv('SQUARE_LOCATION_ID')}")
+        
+        # Check for access token without logging the full token (security)
+        access_token = os.getenv('SQUARE_ACCESS_TOKEN')
+        if not access_token:
+            logger.error("SQUARE_ACCESS_TOKEN is missing")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "Square API configuration error",
+                    "error": "Missing access token"
+                }
+            )
+        
+        logger.info(f"SQUARE_ACCESS_TOKEN present: {bool(access_token)}")
+        
+        # Generate idempotency key if not provided
+        idempotency_key = request.idempotencyKey or str(uuid.uuid4())
+        logger.info(f"Using idempotency key: {idempotency_key}")
+        
+        # Convert amount to cents (integer)
+        amount_in_cents = int(request.amount * 100)
+        
+        # Create payment body
+        body = {
+            "source_id": request.sourceId,
+            "amount_money": {
+                "amount": amount_in_cents,
+                "currency": "USD"
+            },
+            "idempotency_key": idempotency_key,
+            "location_id": os.getenv('SQUARE_LOCATION_ID')
+        }
+        
+        # Add optional fields if present
+        if request.note:
+            body["note"] = request.note
+        if request.referenceId:
+            body["reference_id"] = request.referenceId
+        
+        logger.info(f"Calling Square API with body: {json.dumps(body, default=str)}")
+        
         # Create Square client for this request
         client = Client(
-            access_token=os.getenv('SQUARE_ACCESS_TOKEN'),
+            access_token=access_token,
             environment=os.getenv('SQUARE_ENVIRONMENT', 'sandbox')
         )
         
@@ -120,7 +138,7 @@ def create_payment(request: PaymentRequest):
             
             # Return the payment details
             return {"payment": payment}
-        elif result.is_error():
+        else:
             errors = result.errors
             logger.error(f"Square API Error: {errors}")
             
@@ -137,6 +155,8 @@ def create_payment(request: PaymentRequest):
                     "square_errors": errors
                 }
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Exception in payment processing: {str(e)}")
         raise HTTPException(
@@ -147,195 +167,103 @@ def create_payment(request: PaymentRequest):
             }
         )
 
-# Root endpoint for testing
-@app.get("/")
-def root():
-    return {"message": "Square Payment API", "status": "running"}
-
-# Test endpoint for debugging
-@app.get("/test")
-def test_endpoint():
-    return {"status": "ok", "message": "API is working"}
-
-# Add a specific test endpoint for Square payments
-@app.post("/square-test-payment")
-def square_test_payment(request: PaymentRequest):
-    logger.info(f"Square TEST payment request received: {request}")
+@app.post("/api/payments/test")
+async def test_payment(payment: PaymentRequest):
+    """Test endpoint that simulates payment processing without making real API calls"""
+    logger.info("=========== TEST PAYMENT REQUEST ===========")
+    logger.info(f"Payment source ID: {payment.sourceId}")
+    logger.info(f"Amount: {payment.amount}")
+    logger.info(f"Idempotency key: {payment.idempotencyKey}")
+    logger.info(f"Note: {payment.note}")
+    logger.info(f"Reference ID: {payment.referenceId}")
+    logger.info("============================================")
     
-    # Log environment variables for debugging
-    logger.info(f"SQUARE_ENVIRONMENT: {os.getenv('SQUARE_ENVIRONMENT')}")
-    logger.info(f"SQUARE_LOCATION_ID: {os.getenv('SQUARE_LOCATION_ID')}")
-    
-    # Check for access token without logging the full token (security)
-    access_token = os.getenv('SQUARE_ACCESS_TOKEN')
-    logger.info(f"SQUARE_ACCESS_TOKEN present: {bool(access_token)}")
-    
-    # Generate idempotency key if not provided
-    idempotency_key = request.idempotencyKey or str(uuid.uuid4())
-    logger.info(f"Using idempotency key: {idempotency_key}")
-    
-    # Convert amount to cents (integer)
-    amount_in_cents = int(request.amount * 100)
-    
-    # Create payment body
-    body = {
-        "source_id": request.sourceId,
-        "amount_money": {
-            "amount": amount_in_cents,
-            "currency": "USD"
-        },
-        "idempotency_key": idempotency_key,
-        "location_id": os.getenv('SQUARE_LOCATION_ID')
-    }
-    
-    # Add optional fields if present
-    if request.note:
-        body["note"] = request.note
-    if request.referenceId:
-        body["reference_id"] = request.referenceId
-    
-    logger.info(f"Calling Square API with body: {json.dumps(body, default=str)}")
-    
-    try:
-        # Create Square client for this request
-        client = Client(
-            access_token=os.getenv('SQUARE_ACCESS_TOKEN'),
-            environment=os.getenv('SQUARE_ENVIRONMENT', 'sandbox')
-        )
-        
-        logger.info("Calling Square API to create payment")
-        result = client.payments.create_payment(body)
-        
-        if result.is_success():
-            payment = result.body["payment"]
-            logger.info(f"Payment successful! ID: {payment['id']}")
-            
-            # Return the payment details
-            return {"payment": payment}
-        elif result.is_error():
-            errors = result.errors
-            logger.error(f"Square API Error: {errors}")
-            
-            # Format errors for client
-            error_messages = []
-            for error in errors:
-                error_messages.append(f"{error.get('category')}: {error.get('detail')}")
-                
-            raise HTTPException(
-                status_code=400, 
-                detail={
-                    "message": "Payment failed",
-                    "errors": error_messages,
-                    "square_errors": errors
+    # Return mock success response
+    return {
+        "success": True,
+        "message": "Test payment processed successfully",
+        "payment": {
+            "id": f"test-{payment.idempotencyKey or uuid.uuid4()}",
+            "created_at": datetime.now().isoformat(),
+            "status": "APPROVED",
+            "amount_money": {
+                "amount": int(payment.amount * 100),
+                "currency": "USD"
+            },
+            "card_details": {
+                "card": {
+                    "last_4": "1111",
+                    "card_brand": "VISA",
+                    "exp_month": 12,
+                    "exp_year": 2025
                 }
-            )
-    except Exception as e:
-        logger.exception(f"Exception in payment processing: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail={
-                "message": "Internal server error during payment processing",
-                "error": str(e)
             }
-        )
+        }
+    }
 
-# Square test payment endpoint in /api path to match what frontend is looking for
-@app.post("/api/square-test-payment")
-def api_square_test_payment(request: PaymentRequest):
-    """Square payment test endpoint under /api prefix for frontend testing."""
-    logger.info(f"API Square TEST payment request received: {request}")
-    # Just call the same implementation as the non-prefixed endpoint
-    return square_test_payment(request)
+# ------------- LEGACY ENDPOINTS -------------
+@app.post("/payments")
+async def legacy_payments(request: PaymentRequest):
+    """Legacy endpoint - redirects to main /api/payments endpoint"""
+    logger.warning("Deprecated /payments endpoint accessed, please use /api/payments instead")
+    return await create_payment(request)
 
-# Print out routes and config for debugging
+@app.post("/api/payments/process")
+async def payments_process(request: PaymentRequest):
+    """Legacy process endpoint - redirects to main /api/payments endpoint"""
+    logger.warning("Deprecated /api/payments/process endpoint accessed, please use /api/payments instead")
+    return await create_payment(request)
+# ------------- END LEGACY ENDPOINTS -------------
+
+# ------------- DEBUG ENDPOINTS -------------
+@app.get("/debug")
+async def debug_info(request: Request):
+    """Debug endpoint providing system and request information"""
+    routes_info = [
+        {
+            "path": getattr(route, "path", ""),
+            "name": getattr(route, "name", ""),
+            "methods": list(getattr(route, "methods", set()))
+        }
+        for route in app.routes
+    ]
+    
+    return {
+        "request": {
+            "url": str(request.url),
+            "base_url": str(request.base_url),
+            "path": request.url.path,
+            "method": request.method,
+            "headers": dict(request.headers)
+        },
+        "environment": {
+            "square_environment": os.getenv('SQUARE_ENVIRONMENT'),
+            "has_location_id": bool(os.getenv('SQUARE_LOCATION_ID')),
+            "has_access_token": bool(os.getenv('SQUARE_ACCESS_TOKEN'))
+        },
+        "routes": routes_info
+    }
+# ------------- END DEBUG ENDPOINTS -------------
+
+# ------------- STARTUP EVENT -------------
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Starting up FastAPI application...")
+    """Log important information on startup"""
+    logger.info("Starting Square Payment API...")
     
-    # Get and print all registered routes for debugging
+    # Log registered routes
     routes = []
     for route in app.routes:
         path = getattr(route, "path", "")
-        name = getattr(route, "name", "")
         methods = getattr(route, "methods", set())
-        routes.append(f"{path} [{','.join(methods)}] [{name}]")
+        routes.append(f"{path} [{','.join(methods)}]")
     
-    logger.info(f"Available routes: {routes}")
+    logger.info("Registered routes:")
+    for route in routes:
+        logger.info(f"  {route}")
     
+    # Log environment status
     logger.info(f"SQUARE_ENVIRONMENT: {os.getenv('SQUARE_ENVIRONMENT')}")
     logger.info(f"Has SQUARE_LOCATION_ID: {'Yes' if os.getenv('SQUARE_LOCATION_ID') else 'No'}")
     logger.info(f"Has SQUARE_ACCESS_TOKEN: {'Yes' if os.getenv('SQUARE_ACCESS_TOKEN') else 'No'}")
-
-@app.get("/debug-request")
-async def debug_request(request: Request):
-    """Debug endpoint to log request details"""
-    logger.info(f"Request URL: {request.url}")
-    logger.info(f"Request base URL: {request.base_url}")
-    logger.info(f"Request path: {request.url.path}")
-    logger.info(f"Request method: {request.method}")
-    logger.info(f"Request headers: {request.headers}")
-    
-    # Also check all registered routes
-    routes_info = []
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        name = getattr(route, "name", "")
-        methods = getattr(route, "methods", set())
-        routes_info.append(f"{path} [{','.join(methods)}] [{name}]")
-    
-    return {
-        "url": str(request.url),
-        "base_url": str(request.base_url),
-        "path": request.url.path,
-        "method": request.method,
-        "registered_routes": routes_info
-    }
-
-@app.get("/square-test")
-def square_test():
-    logger.info("Square TEST endpoint accessed via GET")
-    return {"status": "ok", "message": "Square test endpoint is working"}
-
-# Standard payments endpoint in /api path for frontend compatibility
-@app.post("/api/payments")
-def api_payments(request: PaymentRequest):
-    """Standard payments endpoint under /api prefix for frontend compatibility."""
-    logger.info(f"API Payments endpoint request received: {request}")
-    # Just call the same implementation as the non-prefixed endpoint
-    return create_payment(request)
-
-# Add API endpoint for payments/process that the frontend is trying to use
-@app.post("/api/payments/process")
-def api_payments_process(request: PaymentRequest):
-    """Process payments endpoint with /api/payments/process path for frontend SquarePaymentService compatibility."""
-    logger.info(f"API Payments process endpoint request received: {request}")
-    # Just call the same implementation as the non-prefixed endpoint
-    return create_payment(request)
-
-# Add this endpoint after your existing endpoints
-@app.post("/api/payment-test")
-async def test_payment(payment: PaymentRequest):
-    """Test endpoint that logs request data but doesn't make real API calls"""
-    print("=========== TEST PAYMENT REQUEST ===========")
-    print(f"Payment source ID: {payment.sourceId}")
-    print(f"Amount: {payment.amount}")
-    print(f"Idempotency key: {payment.idempotencyKey}")
-    print(f"Note: {payment.note}")
-    print(f"Reference ID: {payment.referenceId}")
-    print("============================================")
-    
-    # Return success response without calling Square API
-    return {
-        "success": True,
-        "message": "Test payment received successfully!",
-        "payment_id": f"test-{payment.idempotencyKey}",
-        "created_at": datetime.now().isoformat(),
-        "status": "APPROVED",
-        "amount": payment.amount,
-        "card": {
-            "last4": "1111",
-            "brand": "VISA",
-            "exp_month": "12",
-            "exp_year": "2025"
-        }
-    }
+# ------------- END STARTUP EVENT -------------

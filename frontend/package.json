@@ -27,13 +27,16 @@
     "postcss": "^8.4.31",
     "supabase": "^2.15.8",
     "tailwindcss": "^3.3.5",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "vitest": "^3.0.8"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
     "test:payment": "node scripts/test-payment.js",
     "supabase": "supabase"
   }

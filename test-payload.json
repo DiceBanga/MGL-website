@@ -1,6 +1,0 @@
-{
-  "sourceId": "cnon:card-nonce-ok",
-  "amount": 100,
-  "idempotencyKey": "test-123",
-  "note": "Test from curl"
-} 
