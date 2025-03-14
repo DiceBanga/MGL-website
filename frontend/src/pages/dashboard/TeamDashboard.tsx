@@ -34,17 +34,17 @@ interface Team {
 interface Tournament {
   id: string;
   name: string;
+  status: string;
   start_date: string;
   end_date: string;
-  status: string;
-  prize_pool: string;
+  prize_pool: number;
 }
 
 interface League {
   id: string;
   name: string;
-  current_season: number;
   status: string;
+  current_season: number;
 }
 
 interface Registration {
@@ -68,6 +68,49 @@ interface RegistrationModal {
   type: 'tournament' | 'league';
   id: string;
   name: string;
+}
+
+interface RosterPlayer {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  role: 'player' | 'captain';
+}
+
+interface TournamentRoster {
+  player_id: string;
+  players: {
+    display_name: string;
+    avatar_url: string | null;
+  };
+}
+
+interface LeagueRoster {
+  player_id: string;
+  players: {
+    display_name: string;
+    avatar_url: string | null;
+  };
+}
+
+interface TournamentRegistration {
+  id: string;
+  status: string;
+  registration_date: string;
+  tournaments: {
+    name: string;
+  };
+  tournament_rosters: TournamentRoster[];
+}
+
+interface LeagueRegistration {
+  id: string;
+  status: string;
+  registration_date: string;
+  leagues: {
+    name: string;
+  };
+  league_rosters: LeagueRoster[];
 }
 
 const TeamDashboard = () => {
@@ -97,6 +140,8 @@ const TeamDashboard = () => {
   const [selectedPlayers, setSelectedPlayers] = useState<TeamMember[]>([]);
   const [availableRosterPlayers, setAvailableRosterPlayers] = useState<TeamMember[]>([]);
   const [captain, setCaptain] = useState<TeamMember | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -203,106 +248,112 @@ const TeamDashboard = () => {
     // Fetch available tournaments
     const { data: tournamentsData, error: tournamentsError } = await supabase
       .from('tournaments')
-      .select('id, name, status')
+      .select('id, name, status, start_date, end_date, prize_pool')
       .eq('status', 'registration')
       .order('name');
 
     if (tournamentsError) {
-      console.error('Error fetching tournaments:', tournamentsError);
+      setError('Error fetching tournaments: ' + tournamentsError.message);
     } else {
-      setAvailableTournaments(tournamentsData || []);
+      setAvailableTournaments(tournamentsData as Tournament[] || []);
     }
 
     // Fetch available leagues
     const { data: leaguesData, error: leaguesError } = await supabase
       .from('leagues')
-      .select('id, name, status')
+      .select('id, name, status, current_season')
       .eq('status', 'active')
       .order('name');
 
     if (leaguesError) {
-      console.error('Error fetching leagues:', leaguesError);
+      setError('Error fetching leagues: ' + leaguesError.message);
     } else {
-      setAvailableLeagues(leaguesData || []);
+      setAvailableLeagues(leaguesData as League[] || []);
     }
   };
 
   const fetchTeamRegistrations = async () => {
     if (!teamId) return;
 
-    // Fetch tournament registrations
-    const { data: tournamentRegs, error: tournamentError } = await supabase
-      .from('tournament_registrations')
-      .select(`
-        id,
-        status,
-        registration_date,
-        tournaments:tournament_id(name),
-        tournament_rosters(
-          player_id,
-          players:player_id(display_name, avatar_url)
-        )
-      `)
-      .eq('team_id', teamId);
+    try {
+      // Fetch tournament registrations
+      const { data: tournamentRegs, error: tournamentError } = await supabase
+        .from('tournament_registrations')
+        .select(`
+          id,
+          status,
+          registration_date,
+          tournaments:tournament_id(name),
+          tournament_rosters(
+            player_id,
+            players:player_id(display_name, avatar_url)
+          )
+        `)
+        .eq('team_id', teamId);
 
-    if (tournamentError) {
-      console.error('Error fetching tournament registrations:', tournamentError);
-    }
+      if (tournamentError) {
+        throw new Error('Error fetching tournament registrations: ' + tournamentError.message);
+      }
 
-    // Fetch league registrations
-    const { data: leagueRegs, error: leagueError } = await supabase
-      .from('league_registrations')
-      .select(`
-        id,
-        status,
-        registration_date,
-        leagues:league_id(name),
-        league_rosters(
-          player_id,
-          players:player_id(display_name, avatar_url)
-        )
-      `)
-      .eq('team_id', teamId);
+      // Fetch league registrations
+      const { data: leagueRegs, error: leagueError } = await supabase
+        .from('league_registrations')
+        .select(`
+          id,
+          status,
+          registration_date,
+          leagues:league_id(name),
+          league_rosters(
+            player_id,
+            players:player_id(display_name, avatar_url)
+          )
+        `)
+        .eq('team_id', teamId);
 
-    if (leagueError) {
-      console.error('Error fetching league registrations:', leagueError);
-    }
+      if (leagueError) {
+        throw new Error('Error fetching league registrations: ' + leagueError.message);
+      }
 
-    // Combine and format registrations
-    const formattedRegistrations: Registration[] = [
-      ...(tournamentRegs || []).map(reg => ({
-        id: reg.id,
-        name: reg.tournaments.name,
-        type: 'tournament' as const,
-        status: reg.status,
-        date: new Date(reg.registration_date).toLocaleDateString(),
-        roster: reg.tournament_rosters.map(roster => ({
-          id: roster.player_id,
-          display_name: roster.players.display_name,
-          role: 'player',
-          jersey_number: null,
-          can_be_deleted: false,
-          avatar_url: roster.players.avatar_url
+      // Combine and format registrations
+      const formattedRegistrations: Registration[] = [
+        ...((tournamentRegs || []) as unknown as TournamentRegistration[]).map(reg => ({
+          id: reg.id,
+          name: reg.tournaments.name,
+          type: 'tournament' as const,
+          status: reg.status,
+          date: new Date(reg.registration_date).toLocaleDateString(),
+          roster: reg.tournament_rosters.map(roster => ({
+            id: roster.player_id,
+            display_name: roster.players.display_name,
+            role: 'player',
+            jersey_number: null,
+            can_be_deleted: false,
+            avatar_url: roster.players.avatar_url
+          }))
+        })),
+        ...((leagueRegs || []) as unknown as LeagueRegistration[]).map(reg => ({
+          id: reg.id,
+          name: reg.leagues.name,
+          type: 'league' as const,
+          status: reg.status,
+          date: new Date(reg.registration_date).toLocaleDateString(),
+          roster: reg.league_rosters.map(roster => ({
+            id: roster.player_id,
+            display_name: roster.players.display_name,
+            role: 'player',
+            jersey_number: null,
+            can_be_deleted: false,
+            avatar_url: roster.players.avatar_url
+          }))
         }))
-      })),
-      ...(leagueRegs || []).map(reg => ({
-        id: reg.id,
-        name: reg.leagues.name,
-        type: 'league' as const,
-        status: reg.status,
-        date: new Date(reg.registration_date).toLocaleDateString(),
-        roster: reg.league_rosters.map(roster => ({
-          id: roster.player_id,
-          display_name: roster.players.display_name,
-          role: 'player',
-          jersey_number: null,
-          can_be_deleted: false,
-          avatar_url: roster.players.avatar_url
-        }))
-      }))
-    ];
+      ];
 
-    setRegistrations(formattedRegistrations);
+      setRegistrations(formattedRegistrations);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching registrations');
+      setRegistrations([]);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -317,18 +368,23 @@ const TeamDashboard = () => {
     
     if (!teamId) return;
 
-    const { error } = await supabase
-      .from('teams')
-      .update(formData)
-      .eq('id', teamId);
+    try {
+      const { error: updateError } = await supabase
+        .from('teams')
+        .update(formData)
+        .eq('id', teamId);
 
-    if (error) {
-      console.error('Error updating team:', error);
-      return;
+      if (updateError) {
+        throw new Error('Error updating team: ' + updateError.message);
+      }
+
+      setTeam(formData as Team);
+      setIsEditing(false);
+      setSuccessMessage('Team updated successfully');
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while updating the team');
     }
-
-    setTeam(formData as Team);
-    setIsEditing(false);
   };
 
   const handleRemoveMember = async (memberId: string) => {
@@ -462,12 +518,18 @@ const TeamDashboard = () => {
   };
 
   const handlePlayerSelection = (player: TeamMember) => {
-    // Maximum 5 players
-    if (selectedPlayers.length >= 5 && !selectedPlayers.some(p => p.id === player.id)) {
+    // If this is the captain, they must be included
+    if (captain && captain.id === player.id) {
       return;
     }
 
-    // If player is already selected, remove them
+    // Maximum 5 players (including captain)
+    if (selectedPlayers.length >= 5 && !selectedPlayers.some(p => p.id === player.id)) {
+      setError('Maximum 5 players allowed in the roster');
+      return;
+    }
+
+    // If player is already selected, remove them (unless they're the captain)
     if (selectedPlayers.some(p => p.id === player.id)) {
       setSelectedPlayers(selectedPlayers.filter(p => p.id !== player.id));
       setAvailableRosterPlayers([...availableRosterPlayers, player]);
@@ -476,11 +538,15 @@ const TeamDashboard = () => {
       setSelectedPlayers([...selectedPlayers, player]);
       setAvailableRosterPlayers(availableRosterPlayers.filter(p => p.id !== player.id));
     }
+
+    // Clear any existing error messages
+    setError(null);
   };
 
   const handleRemoveSelectedPlayer = (playerId: string) => {
     // Don't allow removing captain
     if (captain && captain.id === playerId) {
+      setError('Team captain cannot be removed from the roster');
       return;
     }
 
@@ -488,15 +554,36 @@ const TeamDashboard = () => {
     if (playerToRemove) {
       setSelectedPlayers(selectedPlayers.filter(p => p.id !== playerId));
       setAvailableRosterPlayers([...availableRosterPlayers, playerToRemove]);
+      setError(null);
     }
   };
 
   const handleRegister = async () => {
-    if (!teamId || !selectedEvent || selectedPlayers.length !== 5) return;
+    if (!teamId || !selectedEvent || selectedPlayers.length !== 5) {
+      setError('Please select an event and exactly 5 players');
+      return;
+    }
 
     setIsRegistering(true);
+    setError(null);
     
     try {
+      // Check for existing registration
+      const { data: existingReg, error: checkError } = await supabase
+        .from(registrationType === 'tournament' ? 'tournament_registrations' : 'league_registrations')
+        .select('id')
+        .eq(registrationType === 'tournament' ? 'tournament_id' : 'league_id', selectedEvent)
+        .eq('team_id', teamId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "not found" error
+        throw new Error('Error checking existing registration');
+      }
+
+      if (existingReg) {
+        throw new Error(`Team is already registered for this ${registrationType}`);
+      }
+
       // Create payment details
       const paymentDetails = {
         id: `reg-${Date.now()}`,
@@ -512,7 +599,7 @@ const TeamDashboard = () => {
       // Navigate to payment page
       navigate('/payments', { state: { paymentDetails } });
     } catch (error) {
-      console.error('Error during registration:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred during registration');
       setIsRegistering(false);
     }
   };
@@ -533,7 +620,17 @@ const TeamDashboard = () => {
   }
 
   return (
-    <div className="bg-gray-900/50 py-12">
+    <div className="bg-gray-900 min-h-screen p-8">
+      {error && (
+        <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-2 rounded-md mb-4">
+          {error}
+        </div>
+      )}
+      {successMessage && (
+        <div className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-2 rounded-md mb-4">
+          {successMessage}
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Team Info Section */}
@@ -799,22 +896,6 @@ const TeamDashboard = () => {
                     Join League
                   </button>
                 </div>
-                <div className="flex space-x-4">
-                  <button
-                    onClick={() => handleRegistrationClick('tournament')}
-                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
-                  >
-                    <Trophy className="w-5 h-5 mr-2" />
-                    Join Tournament
-                  </button>
-                  <button
-                    onClick={() => handleRegistrationClick('league')}
-                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center"
-                  >
-                    <Calendar className="w-5 h-5 mr-2" />
-                    Join League
-                  </button>
-                </div>
               </div>
 
               {showRegistrationForm ? (
@@ -861,24 +942,31 @@ const TeamDashboard = () => {
                                         className="w-full h-full object-cover"
                                       />
                                     ) : (
-                                      <User2 className="w-5 h-5 text-green-500" />
+                                      <User2 className="w-6 h-6 text-green-500" />
                                     )}
                                   </div>
                                   <div>
-                                    <p className="text-white">{player.display_name}</p>
-                                    <p className="text-xs text-gray-400">
-                                      {index === 0 ? 'Captain' : `Player ${index}`}
+                                    <p className="text-white font-medium">
+                                      {player.display_name}
+                                      {captain && captain.id === player.id && (
+                                        <span className="ml-2 text-xs bg-green-500/20 text-green-500 px-2 py-1 rounded">
+                                          Captain
+                                        </span>
+                                      )}
                                     </p>
                                   </div>
                                 </div>
-                                {index !== 0 && (
-                                  <button
-                                    onClick={() => handleRemoveSelectedPlayer(player.id)}
-                                    className="text-red-400 hover:text-red-300"
-                                  >
-                                    <X className="w-5 h-5" />
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => handleRemoveSelectedPlayer(player.id)}
+                                  className={`text-red-500 hover:text-red-400 ${
+                                    captain && captain.id === player.id ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                  disabled={captain && captain.id === player.id}
+                                  aria-label={`Remove ${player.display_name} from roster`}
+                                  title={`Remove ${player.display_name} from roster`}
+                                >
+                                  <X className="w-5 h-5" />
+                                </button>
                               </div>
                             ))}
                             
