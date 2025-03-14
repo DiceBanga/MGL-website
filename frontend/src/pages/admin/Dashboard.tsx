@@ -118,6 +118,17 @@ function AdminDashboard() {
               <span>Users</span>
             </Link>
             <Link
+              to="/admin/leagues"
+              className={`flex items-center space-x-2 p-2 rounded-lg ${
+                location.pathname === '/admin/leagues'
+                  ? 'bg-green-700 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Calendar className="w-5 h-5" />
+              <span>League Management</span>
+            </Link>
+            <Link
               to="/admin/tournaments"
               className={`flex items-center space-x-2 p-2 rounded-lg ${
                 location.pathname === '/admin/tournaments'
