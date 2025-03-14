@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2024-03-14
+
+### Authentication & Authorization
+- Added owner role functionality with elevated access privileges
+- Implemented owner-specific routes and components
+- Added Owner Dashboard with comprehensive management features
+- Enhanced Admin Management system with role-based access control
+- Updated user authentication to handle owner privileges
+- Added SQL migrations for owner role management
+
+### User Interface
+- Created new Owner Panel with dedicated navigation
+- Updated UserDashboard to show Owner/Admin access buttons
+- Added Admin Management interface for owner control
+- Enhanced navigation between Owner, Admin, and User dashboards
+- Implemented consistent styling across all dashboard types
+- Added statistics and activity tracking for owner dashboard
+
+### Database
+- Added owner role to auth.users metadata
+- Updated players table to support owner role
+- Added new policies for owner-level access control
+- Enhanced admin management capabilities
+- Added role-based security policies
+
+### Security
+- Implemented role-based access control (RBAC)
+- Added owner-specific database policies
+- Enhanced user role validation
+- Added secure role transition handling
+- Updated authentication guards for owner routes
+
 ## [1.4.0] - 2024-03-10
 
 ### Project Organization
