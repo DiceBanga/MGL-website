@@ -11,6 +11,7 @@ import Contact from './pages/Contact';
 import FAQ from './pages/FAQ';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import Rules from './pages/Rules';
 import NotFound from './pages/NotFound';
 
 // Feature Pages
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
       { path: 'faq', element: <FAQ /> },
       { path: 'privacy', element: <Privacy /> },
       { path: 'terms', element: <Terms /> },
+      { path: 'rules', element: <Rules /> },
       
       // Feature Routes
       { path: 'games', element: <Games /> },
