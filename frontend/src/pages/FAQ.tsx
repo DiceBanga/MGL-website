@@ -8,36 +8,52 @@ interface FAQItem {
 
 const faqs: FAQItem[] = [
   {
-    question: "How do I join a tournament?",
-    answer: "To join a tournament, first create an account and complete your profile. Then, navigate to the Tournaments page, select an upcoming tournament, and click the 'Register' button. Follow the instructions to complete your registration and pay any entry fees if required."
+    question: "What is Militia Gaming League?",
+    answer: "Militia Gaming League (MGL) is an esports organization specializing in competitive NBA 2K tournaments. We host both live and online events, bringing together top players, esports organizations, and 2K professionals."
   },
   {
-    question: "What are the requirements to participate?",
-    answer: "Participants must be at least 13 years old, have a valid NBA 2K account, and agree to follow our tournament rules and code of conduct. Some tournaments may have additional requirements, which will be clearly stated in the tournament details."
+    question: "What platforms do MGL events take place on?",
+    answer: "All MGL events are held on NBA 2K25 for PS5 and Xbox Series S|X. Please ensure you are playing on the latest version of the game to participate."
   },
   {
-    question: "How are prizes distributed?",
-    answer: "Prize distribution varies by tournament and will be clearly outlined in the tournament details. Generally, prizes are distributed within 14 days of tournament completion, after all results are verified and any disputes are resolved."
+    question: "What modes do MGL events take place on?",
+    answer: "Most MGL competitions are held in 5v5 Pro-Am Private matchmaking, though we occasionally host events using 3v3 Pro-Am Private matchmaking."
   },
   {
-    question: "What happens if I experience technical issues during a match?",
-    answer: "If you experience technical issues, immediately notify your opponent and a tournament administrator through the designated communication channels. Take screenshots or recordings of the issue if possible. Our admins will review the situation and make a ruling based on our technical issues policy."
+    question: "How do I register for a MGL event or tournament?",
+    answer: "You can register for events by visiting our website at militiagaming.gg/registration. Look for the specific event or tournament you're interested in and follow the registration instructions."
   },
   {
-    question: "How do I report unsportsmanlike behavior?",
-    answer: "To report unsportsmanlike behavior, use the 'Report' button on the player's profile or match page. Provide as much detail as possible, including screenshots or recordings if available. Our moderation team will review the report and take appropriate action."
+    question: "What are the rules for MGL tournaments?",
+    answer: "Comprehensive rules and regulations for MGL events can be found on our Rules page. Please review the rules carefully before participating."
   },
   {
-    question: "Can I stream my tournament matches?",
-    answer: "Yes, you can stream your tournament matches unless specifically prohibited in the tournament rules. We encourage players to stream their games and share their content, but please be mindful of our content guidelines and any tournament-specific broadcasting rules."
+    question: "What is the format of MGL tournaments and seasons?",
+    answer: "MGL offers both tournaments and seasons. Seasons include a preseason tournament, a 2-week regular season, followed by playoffs. Tournaments come in various formats, including group stages, single elimination, and double elimination, depending on the specific event."
   },
   {
-    question: "How do team registrations work?",
-    answer: "For team tournaments, the team captain must first create a team in their dashboard. They can then invite other players to join the team. Once the team roster is complete, the captain can register the team for tournaments. All team members must have verified accounts."
+    question: "What are the requirements for team names and branding?",
+    answer: "All teams participating in MGL events must have their own custom branding. Teams are not permitted to use NBA, collegiate branding, logos, or any trademarked names owned by other entities. Additionally, teams must include 'MGL' before or after their team names, and the MGL logo must be visible on their courts."
   },
   {
-    question: "What payment methods do you accept?",
-    answer: "We accept major credit cards, PayPal, and other popular payment methods. The available payment options will be displayed during the registration process. All transactions are secure and processed through our trusted payment partners."
+    question: "How can I make a roster or player name change?",
+    answer: "Roster changes or player name updates can be made by visiting militiagaming.gg/shop."
+  },
+  {
+    question: "Where can I view league results and standings?",
+    answer: "You can view league results and standings on MGL's league platform hosted on League OS by visiting militiagaming.leagueos.gg."
+  },
+  {
+    question: "What is the MGL Discord server?",
+    answer: "To join the MGL Discord server, please use this link: discord.gg/SSSC74rSz8."
+  },
+  {
+    question: "What should I do if a team is unavailable or refusing to play a scheduled game?",
+    answer: "If a team is unavailable or refusing to play, document your attempts to arrange the game and submit the evidence to the MGL Admin team for review. If reviewed successfully, the available team will be awarded the win."
+  },
+  {
+    question: "Can I watch MGL tournaments online?",
+    answer: "Yes, MGL tournaments are streamed on Twitch and on YouTube."
   }
 ];
 
