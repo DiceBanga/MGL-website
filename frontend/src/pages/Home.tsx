@@ -1,6 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { TowerControl as GameController, Calendar, Trophy, Users, ChevronLeft, ChevronRight, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+interface Game {
+  id: string;
+  home_team: { name: string };
+  away_team: { name: string };
+  home_score?: number;
+  away_score?: number;
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+  scheduled_at: string;
+}
+
+interface RawGameResponse {
+  id: string;
+  home_team: { name: string } | null;
+  away_team: { name: string } | null;
+  home_score: number | null;
+  away_score: number | null;
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+  scheduled_at: string;
+}
 
 const headlines = [
   {
@@ -20,16 +41,10 @@ const headlines = [
   }
 ];
 
-const matches = [
-  { team1: "NYC Dragons", team2: "LA Knights", score1: "86", score2: "92", status: "Final" },
-  { team1: "CHI Winds", team2: "MIA Heat", score1: "78", score2: "81", status: "Q4 2:30" },
-  { team1: "BOS Rebels", team2: "PHX Suns", score1: "65", score2: "70", status: "Q3" },
-  { team1: "HOU Stars", team2: "DEN Peak", time: "9:30 PM ET", status: "Today" },
-  { team1: "GSW Tide", team2: "DAL Mavs", time: "10:00 PM ET", status: "Today" }
-];
-
 function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [games, setGames] = useState<Game[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -38,12 +53,71 @@ function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    fetchTodayGames();
+  }, []);
+
+  const fetchTodayGames = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const { data: rawData, error } = await supabase
+        .from('games')
+        .select(`
+          id,
+          home_team:home_team_id(name),
+          away_team:away_team_id(name),
+          home_score,
+          away_score,
+          status,
+          scheduled_at
+        `)
+        .gte('scheduled_at', today.toISOString())
+        .lt('scheduled_at', tomorrow.toISOString())
+        .order('scheduled_at', { ascending: true });
+
+      if (error) throw error;
+      
+      // Transform the data to match the Game interface
+      const transformedGames: Game[] = (rawData || []).map(game => {
+        const rawGame = game as unknown as RawGameResponse;
+        return {
+          id: rawGame.id,
+          home_team: { name: rawGame.home_team?.name || 'TBD' },
+          away_team: { name: rawGame.away_team?.name || 'TBD' },
+          home_score: rawGame.home_score || undefined,
+          away_score: rawGame.away_score || undefined,
+          status: rawGame.status,
+          scheduled_at: rawGame.scheduled_at
+        };
+      });
+      
+      setGames(transformedGames);
+    } catch (error) {
+      console.error('Error fetching games:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % headlines.length);
   };
 
   const prevSlide = () => {
     setCurrentSlide((prev) => (prev - 1 + headlines.length) % headlines.length);
+  };
+
+  const formatGameTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/New_York'
+    }) + ' ET';
   };
 
   return (
@@ -54,7 +128,11 @@ function Home() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-green-500 font-semibold">Today's Games</h2>
             <div className="flex space-x-2">
-              <button className="p-1 rounded-full hover:bg-gray-800">
+              <button 
+                className="p-1 rounded-full hover:bg-gray-800"
+                title="View Calendar"
+                aria-label="View Calendar"
+              >
                 <Calendar className="w-5 h-5 text-gray-400" />
               </button>
               <Link to="/schedule" className="text-green-500 hover:text-green-400 text-sm font-medium">
@@ -62,26 +140,52 @@ function Home() {
               </Link>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {matches.map((match, index) => (
-              <div key={index} className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-green-500 font-medium">{match.status}</span>
-                  {match.time && <span className="text-xs text-gray-400">{match.time}</span>}
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">{match.team1}</span>
-                    <span className="text-white font-semibold">{match.score1}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">{match.team2}</span>
-                    <span className="text-white font-semibold">{match.score2}</span>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {[...Array(5)].map((_, index) => (
+                <div key={index} className="bg-gray-800 rounded-lg p-4 animate-pulse">
+                  <div className="h-4 bg-gray-700 rounded mb-2"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-700 rounded w-3/4"></div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : games.length === 0 ? (
+            <div className="bg-gray-800 rounded-lg p-8 text-center">
+              <p className="text-gray-400 text-lg">No Games Scheduled Today</p>
+              <Link to="/schedule" className="text-green-500 hover:text-green-400 text-sm font-medium mt-2 inline-block">
+                View Full Schedule →
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {games.map((game) => (
+                <div key={game.id} className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs text-green-500 font-medium">
+                      {game.status === 'scheduled' ? formatGameTime(game.scheduled_at) : game.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white">{game.home_team.name}</span>
+                      {(game.status === 'live' || game.status === 'completed') && (
+                        <span className="text-white font-semibold">{game.home_score}</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-white">{game.away_team.name}</span>
+                      {(game.status === 'live' || game.status === 'completed') && (
+                        <span className="text-white font-semibold">{game.away_score}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -114,12 +218,16 @@ function Home() {
         <button
           onClick={prevSlide}
           className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 z-20"
+          title="Previous Slide"
+          aria-label="Previous Slide"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
         <button
           onClick={nextSlide}
           className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 z-20"
+          title="Next Slide"
+          aria-label="Next Slide"
         >
           <ChevronRight className="w-6 h-6" />
         </button>

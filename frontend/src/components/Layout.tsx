@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut, Settings } from 'lucide-react';
+import { TowerControl as GameController, Calendar, Trophy, Users, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare, LogOut, Settings, BookOpen } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -117,6 +117,10 @@ const Layout: React.FC = () => {
                   <Link to="/stats" className={`${location.pathname === '/stats' ? 'text-green-500' : 'text-gray-300'} hover:text-green-400 px-3 py-2 rounded-md text-sm font-medium flex items-center`}>
                     <BarChart2 className="w-4 h-4 mr-2" />
                     Stats
+                  </Link>
+                  <Link to="/rules" className={`${location.pathname === '/rules' ? 'text-green-500' : 'text-gray-300'} hover:text-green-400 px-3 py-2 rounded-md text-sm font-medium flex items-center`}>
+                    <BookOpen className="w-4 h-4 mr-2" />
+                    Rules
                   </Link>
                 </div>
               </div>
