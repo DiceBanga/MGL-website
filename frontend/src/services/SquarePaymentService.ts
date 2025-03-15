@@ -2,6 +2,7 @@ import { PaymentForm } from 'react-square-web-payments-sdk';
 import { supabase } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import type { PaymentDetails, PaymentResult } from '../types/payment';
+import { useAuthStore } from '../store/authStore';
 
 export class SquarePaymentService {
   private payments: any = null;
@@ -102,22 +103,38 @@ export class SquarePaymentService {
       }
       
       if (!responseData) {
-        throw new Error('Failed to process payment with any endpoint');
+        return {
+          success: false,
+          error: 'Failed to process payment with any endpoint'
+        };
       }
       
       // Record successful payment in database
       console.log('Payment created successfully, recording in database...');
       await this.recordPaymentInDatabase(responseData, paymentDetails);
       
-      return responseData;
+      // Return success response with payment details
+      return {
+        success: true,
+        paymentId: responseData.payment?.id,
+        receiptUrl: responseData.payment?.receipt_url
+      };
     } catch (error) {
       console.error('Error in createPayment:', error);
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Payment processing failed'
+      };
     }
   }
 
   private async createPendingPaymentRecord(paymentDetails: PaymentDetails) {
     try {
+      const { user } = useAuthStore.getState();
+      if (!user?.id) {
+        throw new Error('User ID is required for payment recording');
+      }
+
       // Create a metadata object that satisfies the database constraint:
       // metadata must have transaction_details and payment_method as objects
       const validMetadata = {
@@ -135,6 +152,7 @@ export class SquarePaymentService {
       const result = await supabase
         .from('payments')
         .insert({
+          user_id: user.id,
           amount: paymentDetails.amount,
           currency: 'USD',
           status: 'pending',
@@ -151,6 +169,7 @@ export class SquarePaymentService {
         return await supabase
           .from('payments')
           .insert({
+            user_id: user.id,
             amount: paymentDetails.amount,
             currency: 'USD',
             status: 'pending',
@@ -271,8 +290,8 @@ export class SquarePaymentService {
 
   async createCard(): Promise<any> {
     try {
-      const payments = await this.initialize();
-      return await payments.card();
+      // We don't need to initialize payments anymore since we're using react-square-web-payments-sdk
+      return null;
     } catch (error) {
       console.error('Error creating card instance:', error);
       throw error;
@@ -281,11 +300,8 @@ export class SquarePaymentService {
 
   async tokenizeCard(card: any): Promise<string> {
     try {
-      const result = await card.tokenize();
-      if (result.status === 'OK') {
-        return result.token;
-      }
-      throw new Error(result.errors?.[0]?.message || 'Card tokenization failed');
+      // This is now handled by the PaymentForm component
+      throw new Error('Use PaymentForm component for card tokenization');
     } catch (error) {
       console.error('Error tokenizing card:', error);
       throw error;
@@ -312,6 +328,50 @@ export class SquarePaymentService {
     } catch (error) {
       console.error('Payment verification error:', error);
       return false;
+    }
+  }
+
+  private async recordPaymentInDatabase(responseData: any, paymentDetails: PaymentDetails) {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user?.id) {
+        throw new Error('User ID is required for payment recording');
+      }
+
+      const metadata = {
+        transaction_details: {
+          processor_response: responseData.payment?.id || "completed",
+          authorization_code: responseData.payment?.id || `auth_${Date.now()}`
+        },
+        payment_method: {
+          type: "square",
+          last_four: responseData.payment?.card_details?.card?.last_4 || "0000"
+        },
+        square_payment: responseData.payment,
+        reference_id: paymentDetails.referenceId,
+        event_type: paymentDetails.type,
+        event_id: paymentDetails.eventId,
+        team_id: paymentDetails.teamId
+      };
+
+      const { error } = await supabase
+        .from('payments')
+        .insert({
+          user_id: user.id,
+          amount: paymentDetails.amount,
+          currency: 'USD',
+          status: responseData.payment?.status || 'completed',
+          payment_method: 'square',
+          payment_id: responseData.payment?.id,
+          description: paymentDetails.description,
+          metadata: metadata
+        });
+
+      if (error) {
+        console.error('Error recording payment in database:', error);
+      }
+    } catch (error) {
+      console.error('Exception recording payment in database:', error);
     }
   }
 }
