@@ -73,6 +73,10 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
+    future: {
+      v7_startTransition: true,
+      v7_relativeSplatPath: true
+    },
     children: [
       { index: true, element: <Home /> },
       { path: 'about', element: <About /> },

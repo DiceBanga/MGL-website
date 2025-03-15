@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { createPayment } from '../lib/square';
 import { PaymentDetails, PaymentMetadata } from '../types/payment';
 
+// Define Square type for global window object
 declare global {
   interface Window {
     Square: any;
@@ -254,29 +255,127 @@ const Payments = () => {
   };
 
   const recordPayment = async (provider: string, squarePayment?: any) => {
-    if (!user || !paymentDetails) return;
+    if (!user || !paymentDetails) return false;
     
     try {
-      // Log the payment details but don't actually save it to the database
-      console.log('Payment would be recorded in database with:', { 
-        provider, 
-        squarePayment,
+      console.log('Recording payment in database with:', {
+        provider,
         user_id: user.id,
         amount: paymentDetails.amount,
-        event_type: paymentDetails.type,
-        event_id: paymentDetails.eventId,
-        team_id: paymentDetails.teamId
+        payment_details: paymentDetails
       });
       
-      // Skip actual database operations during testing
-      console.log('Database operations skipped during testing');
+      // Create a metadata object that satisfies the database constraint:
+      // metadata must have transaction_details and payment_method as objects
+      const validMetadata = {
+        transaction_details: {
+          processor_response: squarePayment?.id || `manual_${Date.now()}`,
+          authorization_code: squarePayment?.id || `auth_${Date.now()}`
+        },
+        payment_method: {
+          type: provider,
+          last_four: squarePayment?.card_details?.card?.last_4 || "0000"
+        }
+      };
       
-      // Always return success - simulate successful payment flow
+      // Add additional fields that don't affect the constraint
+      const fullMetadata = {
+        ...validMetadata,
+        // Additional fields that don't affect the constraint validation
+        event_type: paymentDetails.type,
+        event_id: paymentDetails.eventId,
+        team_id: paymentDetails.teamId,
+        receipt_url: squarePayment?.receipt_url || squarePayment?.receiptUrl
+      };
+      
+      // Create a payment record in the database
+      const { data, error } = await supabase
+        .from('payments')
+        .insert({
+          user_id: user.id,
+          amount: paymentDetails.amount,
+          currency: 'USD',
+          status: 'completed',
+          payment_method: provider,
+          payment_id: squarePayment?.id || `manual_${Date.now()}`,
+          description: paymentDetails.description || `Payment for ${paymentDetails.name}`,
+          metadata: fullMetadata
+        })
+        .select();
+      
+      if (error) {
+        console.error('Error recording payment in database:', error);
+        
+        // Try with just the minimal required metadata structure
+        try {
+          console.log('Trying with minimal required metadata structure');
+          
+          const { data: altData, error: altError } = await supabase
+            .from('payments')
+            .insert({
+              user_id: user.id,
+              amount: paymentDetails.amount,
+              currency: 'USD',
+              status: 'completed',
+              payment_method: provider,
+              payment_id: squarePayment?.id || `manual_${Date.now()}`,
+              description: paymentDetails.description || `Payment for ${paymentDetails.name}`,
+              metadata: validMetadata // Just the minimal required structure
+            })
+            .select();
+            
+          if (altError) {
+            console.error('Minimal metadata approach also failed:', altError);
+            return false;
+          }
+          
+          console.log('Payment recorded with minimal metadata structure:', altData);
+          return true;
+        } catch (altErr) {
+          console.error('Exception in minimal metadata approach:', altErr);
+          return false;
+        }
+      }
+      
+      console.log('Payment recorded in database:', data);
+      
+      // Try to update registration status
+      try {
+        if (paymentDetails.type === 'tournament' && paymentDetails.eventId && paymentDetails.teamId) {
+          const { error: regError } = await supabase
+            .from('tournament_registrations')
+            .update({ 
+              status: 'approved',
+              payment_status: 'paid'
+            })
+            .eq('tournament_id', paymentDetails.eventId)
+            .eq('team_id', paymentDetails.teamId);
+            
+          if (regError) {
+            console.error('Error updating tournament registration:', regError);
+          }
+        } else if (paymentDetails.type === 'league' && paymentDetails.eventId && paymentDetails.teamId) {
+          const { error: regError } = await supabase
+            .from('league_registrations')
+            .update({ 
+              status: 'approved',
+              payment_status: 'paid'
+            })
+            .eq('league_id', paymentDetails.eventId)
+            .eq('team_id', paymentDetails.teamId);
+            
+          if (regError) {
+            console.error('Error updating league registration:', regError);
+          }
+        }
+      } catch (regUpdateError) {
+        console.error('Exception updating registration status:', regUpdateError);
+      }
+      
       return true;
     } catch (err) {
       console.error('Error in recordPayment:', err);
-      // Continue with success for testing purposes
-      return true;
+      return false;
     }
   };
 

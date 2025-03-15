@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, CreditCard, AlertCircle } from 'lucide-react';
 import { squarePaymentService } from '../services/SquarePaymentService';
-import type { payments } from '@square/web-payments-sdk';
+import { PaymentForm } from 'react-square-web-payments-sdk';
 import type { PaymentDetails } from '../types/payment';
 
 interface SquarePaymentFormProps {
@@ -17,12 +17,14 @@ export function SquarePaymentForm({
   onError 
 }: SquarePaymentFormProps) {
   const navigate = useNavigate();
-  const [card, setCard] = useState<payments.Card | null>(null);
+  const [card, setCard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cardholderName, setCardholderName] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [teamOwnerCertified, setTeamOwnerCertified] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -68,6 +70,14 @@ export function SquarePaymentForm({
       if (!zipCode.trim() || zipCode.length !== 5) {
         throw new Error('Valid ZIP code is required');
       }
+      
+      // Validate checkboxes
+      if (!teamOwnerCertified) {
+        throw new Error('You must certify that you are the team owner or authorized by the captain');
+      }
+      if (!termsAccepted) {
+        throw new Error('You must accept the Rules, Terms & Conditions, and Privacy Policy');
+      }
 
       // Tokenize card
       const token = await squarePaymentService.tokenizeCard(card);
@@ -107,41 +117,46 @@ export function SquarePaymentForm({
       </div>
 
       {error && (
-        <div className="mb-6 bg-red-900/20 border border-red-800/30 rounded-lg p-4 flex items-start">
+        <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-4 mb-6 flex items-start">
           <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
-          <p className="text-sm text-red-400">{error}</p>
+          <p className="text-sm text-red-300">{error}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1" htmlFor="cardholder-name">
             Cardholder Name
           </label>
           <input
+            id="cardholder-name"
             type="text"
             value={cardholderName}
             onChange={(e) => setCardholderName(e.target.value)}
             className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white"
+            placeholder="Enter cardholder name"
+            aria-label="Cardholder Name"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1" htmlFor="card-container">
             Card Details
           </label>
           <div 
             id="card-container"
             className="bg-gray-700 border border-gray-600 rounded-md p-4"
+            aria-label="Credit Card Input Field"
           ></div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1" htmlFor="zip-code">
             ZIP Code
           </label>
           <input
+            id="zip-code"
             type="text"
             value={zipCode}
             onChange={(e) => {
@@ -152,8 +167,45 @@ export function SquarePaymentForm({
             }}
             maxLength={5}
             className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white"
+            placeholder="Enter ZIP code"
+            aria-label="ZIP Code"
             required
           />
+        </div>
+
+        {/* Certifications */}
+        <div className="space-y-4">
+          <div className="flex items-start">
+            <div className="flex items-center h-5">
+              <input
+                id="teamOwnerCertification"
+                type="checkbox"
+                checked={teamOwnerCertified}
+                onChange={(e) => setTeamOwnerCertified(e.target.checked)}
+                className="w-4 h-4 border-gray-600 rounded bg-gray-700 text-green-500 focus:ring-green-500"
+                required
+              />
+            </div>
+            <label htmlFor="teamOwnerCertification" className="ml-3 text-sm text-gray-300">
+              I certify that I am the Team Owner or a member of this team that has been authorized by the captain to make changes to this team using Team Management.
+            </label>
+          </div>
+
+          <div className="flex items-start">
+            <div className="flex items-center h-5">
+              <input
+                id="termsAcceptance"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="w-4 h-4 border-gray-600 rounded bg-gray-700 text-green-500 focus:ring-green-500"
+                required
+              />
+            </div>
+            <label htmlFor="termsAcceptance" className="ml-3 text-sm text-gray-300">
+              I certify that I have read and accepted the <a href="/rules" target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400">Rules</a>, <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400">Terms & Conditions</a>, and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400">Privacy Policy</a>.
+            </label>
+          </div>
         </div>
 
         <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-4 flex items-start">

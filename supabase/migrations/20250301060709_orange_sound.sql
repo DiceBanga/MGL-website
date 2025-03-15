@@ -20,4 +20,5 @@ ADD COLUMN IF NOT EXISTS season_start_date date,
 ADD COLUMN IF NOT EXISTS playoff_start_date date,
 ADD COLUMN IF NOT EXISTS entry_fee numeric DEFAULT 100.00,
 ADD COLUMN IF NOT EXISTS late_entry_fee numeric DEFAULT 150.00,
-ADD COLUMN IF NOT EXISTS prize_amount numeric DEFAULT 1000.00;
+ADD COLUMN IF NOT EXISTS prize_amount numeric DEFAULT 1000.00,
+ADD COLUMN IF NOT EXISTS current_season integer DEFAULT 1;

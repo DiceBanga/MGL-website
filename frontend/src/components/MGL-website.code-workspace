@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../YNG_Milita"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "MGL-website",
+		"cSpell.words": [
+			"levelname"
+		]
+	}
+}

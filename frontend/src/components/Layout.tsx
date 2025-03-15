@@ -250,7 +250,7 @@ const Layout: React.FC = () => {
                     <Link to="/privacy" className="text-gray-400 hover:text-green-500">Privacy Policy</Link>
                   </li>
                   <li>
-                    <Link to="/terms" className="text-gray-400 hover:text-green-500">Terms of Service</Link>
+                    <Link to="/terms" className="text-gray-400 hover:text-green-500">Terms & Conditions</Link>
                   </li>
                 </ul>
               </div>

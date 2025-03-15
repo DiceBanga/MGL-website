@@ -18,39 +18,42 @@ export async function createPayment(params: CreatePaymentParams) {
     console.log('Creating payment with real Square API...');
     console.log('Payment params:', params);
     
-    // Try different ports and basic endpoints to rule out connectivity issues
-    const testConfigurations = [
-      { url: 'http://localhost:8000/ping', desc: 'Basic ping endpoint' },
-      { url: 'http://localhost:8000/', desc: 'Root endpoint' },
-      { url: 'http://127.0.0.1:8000/ping', desc: 'Basic ping with IP address' },
-      { url: 'http://localhost:8001/ping', desc: 'Alternative port 8001' },
-      { url: 'http://localhost:5000/ping', desc: 'Alternative port 5000' }
-    ];
-    
-    for (const config of testConfigurations) {
-      try {
-        console.log(`Testing ${config.desc}: ${config.url}`);
-        const testResponse = await fetch(config.url, {
-          method: 'GET'
-        });
-        
-        if (!testResponse.ok) {
-          console.error(`Endpoint ${config.url} not reachable:`, testResponse.status, testResponse.statusText);
-        } else {
-          const testData = await testResponse.json();
-          console.log(`Success! ${config.desc} response:`, testData);
+    // Skip local testing in production - these are only for development
+    if (import.meta.env.MODE !== 'production') {
+      // Try different ports and basic endpoints to rule out connectivity issues
+      const testConfigurations = [
+        { url: 'http://localhost:8000/ping', desc: 'Basic ping endpoint' },
+        { url: 'http://localhost:8000/', desc: 'Root endpoint' }
+      ];
+      
+      for (const config of testConfigurations) {
+        try {
+          console.log(`Testing ${config.desc}: ${config.url}`);
+          const testResponse = await fetch(config.url, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+          
+          if (!testResponse.ok) {
+            console.error(`Endpoint ${config.url} not reachable:`, testResponse.status, testResponse.statusText);
+          } else {
+            const testData = await testResponse.json();
+            console.log(`Success! ${config.desc} response:`, testData);
+          }
+        } catch (testError) {
+          console.error(`Error connecting to ${config.url}:`, testError);
         }
-      } catch (testError) {
-        console.error(`Error connecting to ${config.url}:`, testError);
       }
     }
     
-    // Try both with and without /api prefix for the payment endpoint
+    // Try the actual backend endpoints from the documentation
     const possibleEndpoints = [
-      'http://localhost:8000/square-test-payment',
-      'http://localhost:8000/api/square-test-payment',
-      'http://localhost:8000/payments',
-      'http://localhost:8000/api/payments'
+      // Main endpoint from the docs
+      '/api/payments',
+      // Test endpoint from the docs
+      '/api/payments/test'
     ];
     
     let paymentResponse = null;
@@ -62,7 +65,8 @@ export async function createPayment(params: CreatePaymentParams) {
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           },
           body: JSON.stringify(params)
         });

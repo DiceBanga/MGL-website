@@ -34,3 +34,10 @@ export interface SquarePaymentResponse {
   note?: string;
   customerId?: string;
 }
+
+export interface PaymentResult {
+  success: boolean;
+  paymentId?: string;
+  receiptUrl?: string;
+  error?: string;
+}
