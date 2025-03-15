@@ -3,6 +3,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import Layout from './components/Layout';
 import AuthGuard from './components/AuthGuard';
 import { OwnerRoute } from './components/OwnerRoute';
+import ItemsManagement from './components/ItemsManagement';
 
 // Public Pages
 import Home from './pages/Home';
@@ -156,7 +157,8 @@ const router = createBrowserRouter([
           { path: 'users', element: <OwnerUsers /> },
           { path: 'teams', element: <OwnerTeams /> },
           { path: 'tournaments', element: <OwnerTournaments /> },
-          { path: 'news', element: <OwnerNews /> }
+          { path: 'news', element: <OwnerNews /> },
+          { path: 'items', element: <ItemsManagement isOwner={true} /> }
         ]
       },
 

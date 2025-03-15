@@ -226,7 +226,7 @@ export function SquarePaymentForm({
               Processing...
             </>
           ) : (
-            <>
+            <>ERROR:  23514: check constraint "valid_item_id" of relation "items" is violated by some row
               <CreditCard className="w-5 h-5 mr-2" />
               Pay ${paymentDetails.amount.toFixed(2)}
             </>

@@ -18,6 +18,7 @@ const Payments = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cardName, setCardName] = useState('');
   const [cashAppUsername, setCashAppUsername] = useState('');
   const [paymentId, setPaymentId] = useState('');
   const [receiptUrl, setReceiptUrl] = useState('');
@@ -32,6 +33,30 @@ const Payments = () => {
     }
   }, [location, navigate]);
 
+  const recordPaymentInDatabase = async (provider: string, paymentResult?: any) => {
+    if (!user || !paymentDetails) return false;
+    
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .insert([
+          {
+            user_id: user.id,
+            amount: paymentDetails.amount,
+            provider,
+            payment_details: paymentDetails,
+            payment_result: paymentResult || null
+          }
+        ]);
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.error('Error recording payment:', err);
+      return false;
+    }
+  };
+
   const handleSquarePayment = async (token: string) => {
     try {
       setProcessing(true);
@@ -39,6 +64,10 @@ const Payments = () => {
 
       if (!paymentDetails) {
         throw new Error('No payment details provided');
+      }
+
+      if (!cardName.trim()) {
+        throw new Error('Please enter the name on your card');
       }
 
       // Create payment with Square
@@ -49,19 +78,12 @@ const Payments = () => {
       }
 
       // Record the payment first
-      await recordPayment('square', result);
+      await recordPaymentInDatabase('square', result);
 
       // Then update UI with success
       setSuccess(true);
-      
-      // Handle potentially undefined values
-      if (result.paymentId) {
-        setPaymentId(result.paymentId);
-      }
-      
-      if (result.receiptUrl) {
-        setReceiptUrl(result.receiptUrl);
-      }
+      setPaymentId(result.paymentId ?? '');
+      setReceiptUrl(result.receiptUrl ?? '');
 
     } catch (err) {
       console.error('Payment processing error:', err);
@@ -99,7 +121,7 @@ const Payments = () => {
       
       // Record payment in database
       if (paymentDetails) {
-        await recordPayment('cashapp');
+        await recordPaymentInDatabase('cashapp');
       }
       
       setSuccess(true);
@@ -108,131 +130,6 @@ const Payments = () => {
       setError('Payment processing failed. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const recordPayment = async (provider: string, squarePayment?: any) => {
-    if (!user || !paymentDetails) return false;
-    
-    try {
-      console.log('Recording payment in database with:', {
-        provider,
-        user_id: user.id,
-        amount: paymentDetails.amount,
-        payment_details: paymentDetails
-      });
-      
-      // Create a metadata object that satisfies the database constraint:
-      // metadata must have transaction_details and payment_method as objects
-      const validMetadata = {
-        transaction_details: {
-          processor_response: squarePayment?.id || `manual_${Date.now()}`,
-          authorization_code: squarePayment?.id || `auth_${Date.now()}`
-        },
-        payment_method: {
-          type: provider,
-          last_four: squarePayment?.card_details?.card?.last_4 || "0000"
-        }
-      };
-      
-      // Add additional fields that don't affect the constraint
-      const fullMetadata = {
-        ...validMetadata,
-        // Additional fields that don't affect the constraint validation
-        event_type: paymentDetails.type,
-        event_id: paymentDetails.eventId,
-        team_id: paymentDetails.teamId,
-        receipt_url: squarePayment?.receipt_url || squarePayment?.receiptUrl
-      };
-      
-      // Create a payment record in the database
-      const { data, error } = await supabase
-        .from('payments')
-        .insert({
-          user_id: user.id,
-          amount: paymentDetails.amount,
-          currency: 'USD',
-          status: 'completed',
-          payment_method: provider,
-          payment_id: squarePayment?.id || `manual_${Date.now()}`,
-          description: paymentDetails.description || `Payment for ${paymentDetails.name}`,
-          metadata: fullMetadata
-        })
-        .select();
-      
-      if (error) {
-        console.error('Error recording payment in database:', error);
-        
-        // Try with just the minimal required metadata structure
-        try {
-          console.log('Trying with minimal required metadata structure');
-          
-          const { data: altData, error: altError } = await supabase
-            .from('payments')
-            .insert({
-              user_id: user.id,
-              amount: paymentDetails.amount,
-              currency: 'USD',
-              status: 'completed',
-              payment_method: provider,
-              payment_id: squarePayment?.id || `manual_${Date.now()}`,
-              description: paymentDetails.description || `Payment for ${paymentDetails.name}`,
-              metadata: validMetadata // Just the minimal required structure
-            })
-            .select();
-            
-          if (altError) {
-            console.error('Minimal metadata approach also failed:', altError);
-            return false;
-          }
-          
-          console.log('Payment recorded with minimal metadata structure:', altData);
-          return true;
-        } catch (altErr) {
-          console.error('Exception in minimal metadata approach:', altErr);
-          return false;
-        }
-      }
-      
-      console.log('Payment recorded in database:', data);
-      
-      // Try to update registration status
-      try {
-        if (paymentDetails.type === 'tournament' && paymentDetails.eventId && paymentDetails.teamId) {
-          const { error: regError } = await supabase
-            .from('tournament_registrations')
-            .update({ 
-              status: 'approved',
-              payment_status: 'paid'
-            })
-            .eq('tournament_id', paymentDetails.eventId)
-            .eq('team_id', paymentDetails.teamId);
-            
-          if (regError) {
-            console.error('Error updating tournament registration:', regError);
-          }
-        } else if (paymentDetails.type === 'league' && paymentDetails.eventId && paymentDetails.teamId) {
-          const { error: regError } = await supabase
-            .from('league_registrations')
-            .update({ 
-              status: 'approved',
-              payment_status: 'paid'
-            })
-            .eq('league_id', paymentDetails.eventId)
-            .eq('team_id', paymentDetails.teamId);
-            
-          if (regError) {
-            console.error('Error updating league registration:', regError);
-          }
-        }
-      } catch (regUpdateError) {
-        console.error('Exception updating registration status:', regUpdateError);
-      }
-      
-      return true;
-    } catch (err) {
-      console.error('Error in recordPayment:', err);
-      return false;
     }
   };
 
@@ -413,21 +310,38 @@ const Payments = () => {
                     
                     <form onSubmit={handleSubmit} className="space-y-4">
                       {paymentMethod === 'square' ? (
-                        <PaymentForm
-                          applicationId={import.meta.env.VITE_SQUARE_APP_ID}
-                          locationId={import.meta.env.VITE_SQUARE_LOCATION_ID}
-                          cardTokenizeResponseReceived={async (token) => {
-                            await handleSquarePayment(token.token);
-                          }}
-                          createVerificationDetails={() => ({
-                            amount: String((paymentDetails?.amount || 0).toFixed(2)),
-                            currencyCode: 'USD',
-                            intent: 'CHARGE',
-                            billingContact: {}
-                          })}
-                        >
-                          <SquareCard />
-                        </PaymentForm>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1">
+                              Name on Card
+                            </label>
+                            <input
+                              type="text"
+                              value={cardName}
+                              onChange={(e) => setCardName(e.target.value)}
+                              placeholder="John Doe"
+                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
+                              required
+                            />
+                          </div>
+                          <PaymentForm
+                            applicationId={import.meta.env.VITE_SQUARE_APP_ID}
+                            locationId={import.meta.env.VITE_SQUARE_LOCATION_ID}
+                            cardTokenizeResponseReceived={async (token) => {
+                              await handleSquarePayment(token.token);
+                            }}
+                            createVerificationDetails={() => ({
+                              amount: String((paymentDetails?.amount || 0).toFixed(2)),
+                              currencyCode: 'USD',
+                              intent: 'CHARGE',
+                              billingContact: {
+                                familyName: cardName
+                              }
+                            })}
+                          >
+                            <SquareCard />
+                          </PaymentForm>
+                        </div>
                       ) : (
                         <div className="space-y-4">
                           <div>
