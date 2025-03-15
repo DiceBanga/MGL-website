@@ -271,16 +271,6 @@ class SquarePaymentHandler:
         Returns:
             dict: Result containing success status and payment details
         """
-        # Create a reference ID if not provided
-        if not reference_id and event_type and event_id:
-            # Truncate IDs to ensure reference_id is under 40 characters
-            short_event_id = event_id[:8] if event_id else ""
-            short_team_id = team_id[:8] if team_id else ""
-            
-            reference_id = f"{event_type[:5]}_{short_event_id}"
-            if team_id:
-                reference_id += f"_{short_team_id}"
-        
         # Step 1: Create payment with Square
         payment_data = self.create_payment(
             source_id=source_id,

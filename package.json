@@ -21,6 +21,8 @@
     "concurrently": "^8.0.0"
   },
   "dependencies": {
-    "react-square-web-payments-sdk": "^3.2.3"
+    "@types/uuid": "^10.0.0",
+    "react-square-web-payments-sdk": "^3.2.3",
+    "uuid": "^11.1.0"
   }
 }

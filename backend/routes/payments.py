@@ -19,6 +19,16 @@ async def create_payment(request: PaymentRequest):
         # Import here to avoid circular imports
         from main import payment_service
         
+        # Log the incoming request details
+        print("Payment request details:", {
+            "source_id": request.sourceId,
+            "amount": request.amount,
+            "idempotency_key": request.idempotencyKey,
+            "note": request.note,
+            "reference_id": request.referenceId,
+            "reference_id_length": len(request.referenceId) if request.referenceId else 0
+        })
+        
         # Ensure we have an idempotency key
         idempotency_key = request.idempotencyKey or str(uuid.uuid4())
         

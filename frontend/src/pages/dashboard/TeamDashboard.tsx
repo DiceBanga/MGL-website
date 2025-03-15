@@ -584,6 +584,24 @@ const TeamDashboard = () => {
         throw new Error(`Team is already registered for this ${registrationType}`);
       }
 
+      // Create reference ID with the new format
+      const date = new Date();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${month}${day}${year}`;
+      
+      // Get item ID based on registration type
+      const itemId = registrationType === 'tournament' ? '1003' : '1004';
+      
+      // Get first 8 chars of IDs and add hyphens
+      const teamIdPart = teamId.replace(/-/g, '').slice(0, 8);
+      const captainIdPart = captain?.id.replace(/-/g, '').slice(0, 8);
+      const eventIdPart = selectedEvent.replace(/-/g, '').slice(0, 8);
+      
+      // Construct reference ID according to the new format
+      const referenceId = `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}-${eventIdPart}`;
+
       // Create payment details
       const paymentDetails = {
         id: `reg-${Date.now()}`,
@@ -593,8 +611,12 @@ const TeamDashboard = () => {
         description: `Registration fee for ${selectedEventName}`,
         teamId: teamId,
         eventId: selectedEvent,
-        playersIds: selectedPlayers.map(p => p.id)
+        captainId: captain?.id,
+        playersIds: selectedPlayers.map(p => p.id),
+        referenceId
       };
+      
+      console.log('Created payment details with formatted reference ID:', paymentDetails);
       
       // Navigate to payment page
       navigate('/payments', { state: { paymentDetails } });

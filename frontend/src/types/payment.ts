@@ -6,7 +6,9 @@ export interface PaymentDetails {
   description: string;
   teamId?: string;
   eventId?: string;
+  captainId?: string;  // Added for reference ID generation
   playersIds?: string[]; // Optional but can default to []
+  referenceId?: string;
 }
 
 export interface PaymentMetadata {

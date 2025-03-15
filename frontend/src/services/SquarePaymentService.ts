@@ -6,28 +6,10 @@ import type { PaymentDetails, PaymentResult } from '../types/payment';
 export class SquarePaymentService {
   private payments: any = null;
 
-  async initialize(): Promise<any> {
-    if (!this.payments) {
-      try {
-        // @ts-ignore - Square SDK types are not properly exported
-        this.payments = await window.Square.payments(
-          import.meta.env.VITE_SQUARE_APP_ID,
-          {
-            environment: import.meta.env.VITE_SQUARE_ENVIRONMENT || 'sandbox'
-          }
-        );
-        console.log('Square payments initialized successfully');
-      } catch (error) {
-        console.error('Failed to initialize Square payments:', error);
-        throw error;
-      }
-    }
-    return this.payments;
-  }
-
   async createPayment(sourceId: string, paymentDetails: PaymentDetails): Promise<PaymentResult> {
     try {
       console.log('Creating payment with Square...', { sourceId, amount: paymentDetails.amount });
+      console.log('Original payment details:', paymentDetails);
       
       // Create pending payment record first
       const { data: paymentRecord, error: dbError } = await this.createPendingPaymentRecord(paymentDetails);
@@ -37,6 +19,21 @@ export class SquarePaymentService {
         // Continue with payment processing even if DB record fails
       }
 
+      if (!paymentDetails.referenceId) {
+        throw new Error('Reference ID is required for payment processing');
+      }
+
+      // Create request payload with the provided reference ID
+      const payload = {
+        sourceId,
+        amount: paymentDetails.amount,
+        idempotencyKey: uuidv4(),
+        note: paymentDetails.description,
+        referenceId: paymentDetails.referenceId
+      };
+      
+      console.log('Payment params:', payload);
+      
       // Try the actual backend endpoints from the documentation
       const possibleEndpoints = [
         // Main endpoint from the docs
@@ -49,10 +46,31 @@ export class SquarePaymentService {
       let responseData = null;
       let endpoint = '';
       
+      // Test basic connectivity first
+      try {
+        console.log('Testing Basic ping endpoint: http://localhost:8000/ping');
+        const pingResponse = await fetch('http://localhost:8000/ping');
+        if (pingResponse.ok) {
+          console.log('Success! Basic ping endpoint response:', await pingResponse.json());
+        }
+      } catch (e) {
+        console.error('Basic ping endpoint not working:', e);
+      }
+      
+      // Test root endpoint
+      try {
+        console.log('Testing Root endpoint: http://localhost:8000/');
+        const rootResponse = await fetch('http://localhost:8000/');
+        if (rootResponse.ok) {
+          console.log('Success! Root endpoint response:', await rootResponse.json());
+        }
+      } catch (e) {
+        console.error('Root endpoint not working:', e);
+      }
+      
       for (const ep of possibleEndpoints) {
         try {
           console.log(`Trying payment endpoint: ${ep}`);
-          endpoint = ep;
           
           // Process payment with Square API
           response = await fetch(ep, {
@@ -61,21 +79,15 @@ export class SquarePaymentService {
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            body: JSON.stringify({
-              sourceId,
-              amount: paymentDetails.amount,
-              idempotencyKey: uuidv4(),
-              note: paymentDetails.description,
-              referenceId: `${paymentDetails.type}_${paymentDetails.eventId}_${paymentDetails.teamId}`
-            }),
+            body: JSON.stringify(payload)
           });
           
           if (response.ok) {
             responseData = await response.json();
-            console.log(`Successful response from ${ep}:`, responseData);
+            console.log(`Success with endpoint ${ep}:`, responseData);
             break;
           } else {
-            console.error(`Error from ${ep}:`, response.status, response.statusText);
+            console.error(`Payment endpoint ${ep} not working:`, response.status, response.statusText);
             
             try {
               const errorText = await response.text();
@@ -89,75 +101,18 @@ export class SquarePaymentService {
         }
       }
       
-      // If all endpoints failed, try the mock implementation
-      if (!response || !response.ok || !responseData) {
-        console.warn('All payment endpoints failed, using mock implementation');
-        
-        // Create a mock payment response
-        responseData = {
-          payment: {
-            id: `mock_${Date.now()}`,
-            status: 'COMPLETED',
-            amount_money: {
-              amount: Math.round(paymentDetails.amount * 100),
-              currency: 'USD'
-            },
-            receipt_url: `https://squareup.com/receipt/mock/${Date.now()}`,
-            created_at: new Date().toISOString()
-          }
-        };
+      if (!responseData) {
+        throw new Error('Failed to process payment with any endpoint');
       }
-
-      // Handle response format differences - some endpoints return { payment: {...} } and others might not
-      const paymentResult = responseData.payment || responseData;
       
-      // Verify payment status - normalize different status formats
-      const paymentStatus = paymentResult.status || '';
-      const isCompleted = ['COMPLETED', 'APPROVED', 'SUCCESS', 'SUCCEEDED'].includes(paymentStatus.toUpperCase());
+      // Record successful payment in database
+      console.log('Payment created successfully, recording in database...');
+      await this.recordPaymentInDatabase(responseData, paymentDetails);
       
-      if (!isCompleted) {
-        // Update payment record to failed if we have one
-        if (paymentRecord) {
-          await this.updatePaymentRecord(paymentRecord.id, {
-            status: 'failed',
-            metadata: {
-              ...paymentRecord.metadata,
-              error: `Payment failed with status: ${paymentStatus || 'unknown'}`
-            }
-          });
-        }
-
-        throw new Error(`Payment failed with status: ${paymentStatus || 'unknown'}`);
-      }
-
-      // Update payment record to completed if we have one
-      if (paymentRecord) {
-        await this.updatePaymentRecord(paymentRecord.id, {
-          status: 'completed',
-          payment_id: paymentResult.id,
-          metadata: {
-            ...paymentRecord.metadata,
-            squarePaymentId: paymentResult.id,
-            receiptUrl: paymentResult.receiptUrl || paymentResult.receipt_url
-          }
-        });
-      }
-
-      // If this is a registration payment, update the registration status
-      await this.updateRegistrationStatus(paymentDetails);
-
-      return {
-        success: true,
-        paymentId: paymentResult.id,
-        receiptUrl: paymentResult.receiptUrl || paymentResult.receipt_url
-      };
+      return responseData;
     } catch (error) {
-      console.error('Payment error:', error);
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Payment processing failed'
-      };
+      console.error('Error in createPayment:', error);
+      throw error;
     }
   }
 

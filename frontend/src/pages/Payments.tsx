@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CreditCard, DollarSign, CheckCircle, AlertCircle, ArrowLeft, Shield, Lock } from 'lucide-react';
+import { CreditCard, DollarSign, CheckCircle, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { createPayment } from '../lib/square';
-import { PaymentDetails, PaymentMetadata } from '../types/payment';
+import { PaymentDetails } from '../types/payment';
+import { PaymentForm, CreditCard as SquareCard } from 'react-square-web-payments-sdk';
+import { SquarePaymentService } from '../services/SquarePaymentService';
 
-// Define Square type for global window object
-declare global {
-  interface Window {
-    Square: any;
-  }
-}
+const squarePaymentService = new SquarePaymentService();
 
 const Payments = () => {
   const navigate = useNavigate();
@@ -22,14 +18,10 @@ const Payments = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCVC, setCardCVC] = useState('');
-  const [cardName, setCardName] = useState('');
-  const [zipCode, setZipCode] = useState('');
   const [cashAppUsername, setCashAppUsername] = useState('');
-  const [squarePayment, setSquarePayment] = useState<any>(null);
-  const [card, setCard] = useState<any>(null);
+  const [paymentId, setPaymentId] = useState('');
+  const [receiptUrl, setReceiptUrl] = useState('');
+  const [isProcessing, setProcessing] = useState(false);
 
   useEffect(() => {
     // Get payment details from location state or redirect back
@@ -40,124 +32,43 @@ const Payments = () => {
     }
   }, [location, navigate]);
 
-  useEffect(() => {
-    if (paymentMethod === 'square') {
-      initializeSquare();
-    }
-  }, [paymentMethod]);
-
-  const initializeSquare = async () => {
-    if (!window.Square) {
-      console.log('Loading Square SDK...');
-      const script = document.createElement('script');
-      script.src = import.meta.env.VITE_SQUARE_ENVIRONMENT === 'production'
-        ? 'https://web.squarecdn.com/v1/square.js'
-        : 'https://sandbox.web.squarecdn.com/v1/square.js';
-      script.onload = () => {
-        console.log('Square SDK loaded, initializing payments...');
-        initializeSquarePayment();
-      };
-      document.body.appendChild(script);
-    } else {
-      console.log('Square SDK already loaded, initializing payments...');
-      initializeSquarePayment();
-    }
-  };
-
-  const initializeSquarePayment = async () => {
-    if (!window.Square) {
-      console.error('Square SDK not loaded');
-      return;
-    }
-
+  const handleSquarePayment = async (token: string) => {
     try {
-      console.log('Creating payments instance...');
-      const payments = window.Square.payments(
-        import.meta.env.VITE_SQUARE_APP_ID,
-        import.meta.env.VITE_SQUARE_LOCATION_ID
-      );
+      setProcessing(true);
+      setError(null);
 
-      console.log('Creating card instance...');
-      const card = await payments.card();
-      console.log('Attaching card to container...');
-      await card.attach('#card-container');
-      setCard(card);
-      console.log('Card form ready');
-    } catch (e) {
-      console.error('Error initializing Square:', e);
-      setError('Failed to initialize payment form. Please try again.');
-    }
-  };
-
-  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 16) {
-      // Format with spaces every 4 digits
-      setCardNumber(value.replace(/(\d{4})(?=\d)/g, '$1 ').trim());
-    }
-  };
-
-  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 4) {
-      // Format as MM/YY
-      if (value.length > 2) {
-        setCardExpiry(`${value.slice(0, 2)}/${value.slice(2)}`);
-      } else {
-        setCardExpiry(value);
+      if (!paymentDetails) {
+        throw new Error('No payment details provided');
       }
-    }
-  };
 
-  const handleCVCChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '');
-    if (value.length <= 4) {
-      setCardCVC(value);
-    }
-  };
+      // Create payment with Square
+      const result = await squarePaymentService.createPayment(token, paymentDetails);
 
-  const validateCardDetails = () => {
-    if (cardNumber.replace(/\s/g, '').length !== 16) {
-      setError('Please enter a valid 16-digit card number');
-      return false;
-    }
-    
-    if (cardExpiry.length !== 5) {
-      setError('Please enter a valid expiry date (MM/YY)');
-      return false;
-    }
-    
-    const [month, year] = cardExpiry.split('/');
-    const currentYear = new Date().getFullYear() % 100;
-    const currentMonth = new Date().getMonth() + 1;
-    
-    if (parseInt(month) < 1 || parseInt(month) > 12) {
-      setError('Please enter a valid month (01-12)');
-      return false;
-    }
-    
-    if (parseInt(year) < currentYear || 
-        (parseInt(year) === currentYear && parseInt(month) < currentMonth)) {
-      setError('Your card has expired');
-      return false;
-    }
-    
-    if (cardCVC.length < 3) {
-      setError('Please enter a valid security code');
-      return false;
-    }
-    
-    if (!cardName.trim()) {
-      setError('Please enter the name on your card');
-      return false;
-    }
+      if (!result.success) {
+        throw new Error(result.error || 'Payment failed');
+      }
 
-    if (!zipCode.trim() || zipCode.length < 5) {
-      setError('Please enter a valid ZIP code');
-      return false;
+      // Record the payment first
+      await recordPayment('square', result);
+
+      // Then update UI with success
+      setSuccess(true);
+      
+      // Handle potentially undefined values
+      if (result.paymentId) {
+        setPaymentId(result.paymentId);
+      }
+      
+      if (result.receiptUrl) {
+        setReceiptUrl(result.receiptUrl);
+      }
+
+    } catch (err) {
+      console.error('Payment processing error:', err);
+      setError(err instanceof Error ? err.message : 'Payment processing failed');
+    } finally {
+      setProcessing(false);
     }
-    
-    return true;
   };
 
   const validateCashApp = () => {
@@ -172,60 +83,6 @@ const Payments = () => {
     }
     
     return true;
-  };
-
-  const processSquarePayment = async () => {
-    if (!card || !paymentDetails || !paymentDetails.eventId || !paymentDetails.teamId) {
-      setError('Missing required payment details');
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const result = await card.tokenize();
-      if (result.status === 'OK') {
-        // Generate unique idempotency key
-        const idempotencyKey = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-
-        console.log('Tokenized card successfully, creating payment...');
-        
-        // Create payment using Square API
-        const payment = await createPayment({
-          sourceId: result.token,
-          amount: paymentDetails.amount,
-          idempotencyKey,
-          note: `Payment for ${paymentDetails.name}`,
-          referenceId: `${paymentDetails.type}_${paymentDetails.eventId}_${paymentDetails.teamId}`
-        });
-
-        console.log('Payment created successfully, recording in database...');
-        
-        // Record payment in database with metadata (don't throw if it fails)
-        const recordSuccess = await recordPayment('square', payment);
-        
-        // If we got this far, the payment was processed (even if recording had issues)
-        setSquarePayment(payment);
-        setSuccess(true);
-        
-        if (!recordSuccess) {
-          console.warn('Payment was processed, but recording in database had issues.');
-          // Don't show this warning to the user - the payment was successfully processed
-        }
-      } else {
-        throw new Error(result.errors[0].message);
-      }
-    } catch (error: unknown) {
-      console.error('Payment error:', error);
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('An unknown error occurred');
-      }
-    } finally {
-      setLoading(false);
-    }
   };
 
   const processCashAppPayment = async () => {
@@ -382,9 +239,7 @@ const Payments = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (paymentMethod === 'square') {
-      await processSquarePayment();
-    } else if (paymentMethod === 'cashapp') {
+    if (paymentMethod === 'cashapp') {
       await processCashAppPayment();
     }
   };
@@ -425,7 +280,7 @@ const Payments = () => {
             <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
               <div className="flex justify-between mb-2">
                 <span className="text-gray-300">Payment ID:</span>
-                <span className="text-white font-medium">{paymentDetails.id.slice(0, 8)}</span>
+                <span className="text-white font-medium">{paymentId}</span>
               </div>
               <div className="flex justify-between mb-2">
                 <span className="text-gray-300">Date:</span>
@@ -558,49 +413,21 @@ const Payments = () => {
                     
                     <form onSubmit={handleSubmit} className="space-y-4">
                       {paymentMethod === 'square' ? (
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Name on Card
-                            </label>
-                            <input
-                              type="text"
-                              value={cardName}
-                              onChange={(e) => setCardName(e.target.value)}
-                              placeholder="John Doe"
-                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Card Details
-                            </label>
-                            <div 
-                              id="card-container" 
-                              className="w-full min-h-[100px] bg-gray-700 border border-gray-600 rounded-md px-4 py-3 text-white"
-                            ></div>
-                            {error && (
-                              <p className="mt-2 text-sm text-red-400">
-                                {error}
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={loading || !card || !cardName.trim()}
-                            className="w-full bg-green-700 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                          >
-                            {loading ? (
-                              <>
-                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                                Processing...
-                              </>
-                            ) : (
-                              <>Pay ${paymentDetails?.amount.toFixed(2)}</>
-                            )}
-                          </button>
-                        </div>
+                        <PaymentForm
+                          applicationId={import.meta.env.VITE_SQUARE_APP_ID}
+                          locationId={import.meta.env.VITE_SQUARE_LOCATION_ID}
+                          cardTokenizeResponseReceived={async (token) => {
+                            await handleSquarePayment(token.token);
+                          }}
+                          createVerificationDetails={() => ({
+                            amount: String((paymentDetails?.amount || 0).toFixed(2)),
+                            currencyCode: 'USD',
+                            intent: 'CHARGE',
+                            billingContact: {}
+                          })}
+                        >
+                          <SquareCard />
+                        </PaymentForm>
                       ) : (
                         <div className="space-y-4">
                           <div>
