@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import { Edit, UserPlus, Trash, RefreshCw, DollarSign } from 'lucide-react';
+import { Edit, UserPlus, Trash, RefreshCw, DollarSign, Users, Trophy, UserCog, Paintbrush, ChevronRight } from 'lucide-react';
 import { DbTeam, DbTeamMember } from '../../types/database';
 import { createPaymentDetails } from '../../utils/paymentUtils';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
+import { v4 as uuidv4 } from 'uuid';
 
 // UI-specific interface that matches the team_players table structure
 interface TeamMemberUI {
@@ -44,13 +45,30 @@ const TeamDashboard = () => {
   const [isEditingOnlineId, setIsEditingOnlineId] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   
+  // Front Office state
+  const [showFrontOffice, setShowFrontOffice] = useState(true);
+  const [availableTournaments, setAvailableTournaments] = useState<any[]>([]);
+  const [availableLeagues, setAvailableLeagues] = useState<any[]>([]);
+  const [itemPrices, setItemPrices] = useState<{[key: string]: number}>({});
+  
   // Confirmation dialog states
   const [showOnlineIdConfirmation, setShowOnlineIdConfirmation] = useState(false);
   const [showRebrandConfirmation, setShowRebrandConfirmation] = useState(false);
+  
+  // Add new state variables for player signing
+  const [showPlayerSigningForm, setShowPlayerSigningForm] = useState(false);
+  const [playerEmail, setPlayerEmail] = useState('');
+  const [playerName, setPlayerName] = useState('');
+  const [signingError, setSigningError] = useState<string | null>(null);
+  
+  // Add new state for player signing confirmation
+  const [showPlayerSigningConfirmation, setShowPlayerSigningConfirmation] = useState(false);
 
   useEffect(() => {
     if (user) {
       fetchTeamData();
+      fetchAvailableEvents();
+      fetchItemPrices();
     }
   }, [user]);
 
@@ -164,6 +182,112 @@ const TeamDashboard = () => {
     }
   };
 
+  const fetchAvailableEvents = async () => {
+    try {
+      // Fetch available tournaments
+      const { data: tournamentsData, error: tournamentsError } = await supabase
+        .from('tournaments')
+        .select('id, name, status, payment_amount')
+        .eq('status', 'registration')
+        .order('name');
+        
+      if (!tournamentsError && tournamentsData) {
+        setAvailableTournaments(tournamentsData);
+      } else {
+        console.error('Error fetching tournaments:', tournamentsError);
+      }
+      
+      // Fetch available leagues
+      const { data: leaguesData, error: leaguesError } = await supabase
+        .from('leagues')
+        .select('id, name, status, payment_amount')
+        .eq('status', 'active')
+        .order('name');
+        
+      if (!leaguesError && leaguesData) {
+        setAvailableLeagues(leaguesData);
+      } else {
+        console.error('Error fetching leagues:', leaguesError);
+      }
+    } catch (err) {
+      console.error('Error fetching events:', err);
+    }
+  };
+  
+  const fetchItemPrices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .select('item_id, current_price, item_name')
+        .in('item_id', ['1001', '1002', '1003', '1004', '1005', '1006', '1007']); // All relevant items
+        
+      if (!error && data) {
+        const prices: {[key: string]: number} = {};
+        data.forEach(item => {
+          prices[item.item_id] = item.current_price;
+        });
+        setItemPrices(prices);
+      } else {
+        console.error('Error fetching item prices:', error);
+      }
+    } catch (err) {
+      console.error('Error fetching item prices:', err);
+    }
+  };
+
+  const createTeamChangeRequest = async (
+    requestType: string,
+    teamId: string,
+    requestedBy: string,
+    itemId: string,
+    paymentId: string,
+    options: {
+      tournamentId?: string;
+      leagueId?: string;
+      playerId?: string;
+      oldValue?: string;
+      newValue?: string;
+      metadata?: Record<string, any>;
+    }
+  ) => {
+    try {
+      const { tournamentId, leagueId, playerId, oldValue, newValue, metadata } = options;
+      
+      // Generate a UUID for the request ID
+      const requestId = uuidv4();
+      
+      const { data, error } = await supabase
+        .from('team_change_requests')
+        .insert({
+          id: requestId, // Use a UUID for the request ID
+          team_id: teamId,
+          request_type: requestType,
+          requested_by: requestedBy,
+          tournament_id: tournamentId,
+          league_id: leagueId,
+          player_id: playerId,
+          old_value: oldValue,
+          new_value: newValue,
+          status: 'pending',
+          payment_id: paymentId,
+          item_id: itemId,
+          metadata
+        })
+        .select()
+        .single();
+        
+      if (error) {
+        console.error('Error creating team change request:', error);
+        return null;
+      }
+      
+      return data;
+    } catch (err) {
+      console.error('Error creating team change request:', err);
+      return null;
+    }
+  };
+
   const handleEditTeamName = () => {
     setIsEditingName(true);
   };
@@ -192,21 +316,53 @@ const TeamDashboard = () => {
     try {
       setProcessingPayment(true);
       
+      // Get the price from the itemPrices state
+      const price = itemPrices['1006'] || 20.00; // Default to 20.00 if not found
+      
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
       // Create payment details for team rebranding
       const paymentDetails = createPaymentDetails(
         'team_rebrand',
         'Team Name Change',
-        5.00,
+        price,
         `Change team name from "${team.name}" to "${newTeamName}"`,
         {
           teamId: team.id,
           captainId: user.id,
-          item_id: '1007' // Item ID for team rebranding
+          item_id: '1006', // Item ID for team rebranding
+          request_id: requestId
         }
       );
       
+      // Add metadata for the team change request
+      paymentDetails.metadata = {
+        requestType: 'team_rebrand',
+        oldTeamName: team.name,
+        newTeamName: newTeamName,
+        requestId: requestId,
+        // Store the data needed for creating the team change request
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: '1006',
+          oldValue: team.name,
+          newValue: newTeamName,
+          metadata: {
+            oldTeamName: team.name,
+            newTeamName: newTeamName
+          }
+        }
+      };
+      
       // Navigate to the payment page with the payment details
-      navigate('/payments', { state: { paymentDetails } });
+      navigate('/payments', { 
+        state: { 
+          paymentDetails,
+          changeRequestType: 'team_rebrand'
+        }
+      });
     } catch (err) {
       console.error(err);
       setError('Failed to process payment for team name change');
@@ -261,22 +417,58 @@ const TeamDashboard = () => {
       // Get the current online ID from the user object
       const currentOnlineId = player.user?.online_id || 'None';
       
+      // Get the price from the itemPrices state
+      const price = itemPrices['1007'] || 5.00; // Default to 5.00 if not found
+      
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
       // Create payment details for online ID change
       const paymentDetails = createPaymentDetails(
         'online_id_change',
         'Online ID Change',
-        2.00,
+        price,
         `Change online ID from "${currentOnlineId}" to "${newOnlineId}"`,
         {
           teamId: team.id,
           captainId: user.id,
           playerId: selectedPlayerId,
-          item_id: '1006' // Item ID for online ID change
+          item_id: '1007', // Item ID for online ID change
+          request_id: requestId
         }
       );
       
+      // Add metadata for the team change request
+      paymentDetails.metadata = {
+        requestType: 'online_id_change',
+        playerId: selectedPlayerId,
+        playerName: player.user?.username || selectedPlayerId,
+        oldOnlineId: currentOnlineId,
+        newOnlineId: newOnlineId,
+        requestId: requestId,
+        // Store the data needed for creating the team change request
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: '1007',
+          playerId: selectedPlayerId,
+          oldValue: currentOnlineId,
+          newValue: newOnlineId,
+          metadata: {
+            playerName: player.user?.username || selectedPlayerId,
+            oldOnlineId: currentOnlineId,
+            newOnlineId: newOnlineId
+          }
+        }
+      };
+      
       // Navigate to the payment page with the payment details
-      navigate('/payments', { state: { paymentDetails } });
+      navigate('/payments', { 
+        state: { 
+          paymentDetails,
+          changeRequestType: 'online_id_change'
+        }
+      });
     } catch (err) {
       console.error(err);
       setError('Failed to process payment for online ID change');
@@ -311,6 +503,237 @@ const TeamDashboard = () => {
   const handleAddPlayer = () => {
     if (!team) return;
     navigate('/dashboard/add-player', { state: { teamId: team.id } });
+  };
+
+  const handleJoinTournament = (tournamentId: string, tournamentName: string, price: number) => {
+    if (!team || !user) return;
+    
+    try {
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
+      // Create payment details for tournament registration
+      const paymentDetails = createPaymentDetails(
+        'tournament',
+        'Tournament Registration',
+        price,
+        `Registration for ${tournamentName}`,
+        {
+          teamId: team.id,
+          captainId: user.id,
+          eventId: tournamentId,
+          item_id: '1003', // Item ID for tournament registration
+          playersIds: team.members.map(member => member.user_id), // Include all team members
+          request_id: requestId
+        }
+      );
+      
+      // Add metadata for the registration
+      paymentDetails.metadata = {
+        tournamentId,
+        tournamentName,
+        teamId: team.id,
+        teamName: team.name,
+        requestId,
+        // No need for changeRequestData as tournament registrations are handled differently
+      };
+      
+      // Navigate to the payment page with the payment details
+      navigate('/payments', { 
+        state: { 
+          paymentDetails
+          // No changeRequestType as tournament registrations are handled by updateRegistrationStatus
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Failed to process tournament registration');
+    }
+  };
+  
+  const handleJoinLeague = (leagueId: string, leagueName: string, price: number) => {
+    if (!team || !user) return;
+    
+    try {
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
+      // Create payment details for league registration
+      const paymentDetails = createPaymentDetails(
+        'league',
+        'League Registration',
+        price,
+        `Registration for ${leagueName}`,
+        {
+          teamId: team.id,
+          captainId: user.id,
+          eventId: leagueId,
+          item_id: '1004', // Item ID for league registration
+          playersIds: team.members.map(member => member.user_id), // Include all team members
+          request_id: requestId
+        }
+      );
+      
+      // Add metadata for the registration
+      paymentDetails.metadata = {
+        leagueId,
+        leagueName,
+        teamId: team.id,
+        teamName: team.name,
+        requestId,
+        // No need for changeRequestData as league registrations are handled differently
+      };
+      
+      // Navigate to the payment page with the payment details
+      navigate('/payments', { 
+        state: { 
+          paymentDetails
+          // No changeRequestType as league registrations are handled by updateRegistrationStatus
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Failed to process league registration');
+    }
+  };
+  
+  const handleTransferOwnership = (newCaptainId: string, newCaptainName: string) => {
+    if (!team || !user) return;
+    
+    try {
+      // Get the price from the itemPrices state
+      const price = itemPrices['1002'] || 15.00; // Default to 15.00 if not found
+      
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
+      // Create payment details for team transfer
+      const paymentDetails = createPaymentDetails(
+        'team_transfer',
+        'Team Ownership Transfer',
+        price,
+        `Transfer ownership of ${team.name} to ${newCaptainName}`,
+        {
+          teamId: team.id,
+          captainId: user.id,
+          playerId: newCaptainId,
+          item_id: '1002', // Item ID for team transfer
+          request_id: requestId
+        }
+      );
+      
+      // Add metadata for the team change request
+      paymentDetails.metadata = {
+        requestType: 'team_transfer',
+        oldCaptainId: user.id,
+        oldCaptainName: user.email, // Use email instead of username
+        newCaptainId: newCaptainId,
+        newCaptainName: newCaptainName,
+        teamName: team.name,
+        requestId: requestId,
+        // Store the data needed for creating the team change request
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: '1002',
+          playerId: newCaptainId,
+          oldValue: user.id,
+          newValue: newCaptainId,
+          metadata: {
+            oldCaptainName: user.email,
+            newCaptainName: newCaptainName,
+            teamName: team.name
+          }
+        }
+      };
+      
+      // Navigate to the payment page with the payment details
+      navigate('/payments', { 
+        state: { 
+          paymentDetails,
+          // Don't include functions in the navigation state
+          changeRequestType: 'team_transfer'
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Failed to process team transfer');
+    }
+  };
+
+  const handlePlayerSigningRequest = () => {
+    if (!team || !user) return;
+    if (!playerEmail.trim() || !playerName.trim()) {
+      setSigningError('Please provide both player email and name');
+      return;
+    }
+    
+    // Show confirmation dialog
+    setSigningError(null);
+    setShowPlayerSigningConfirmation(true);
+  };
+
+  const processPlayerSigningPayment = async () => {
+    if (!team || !user || !playerEmail.trim() || !playerName.trim()) return;
+    
+    try {
+      setProcessingPayment(true);
+      
+      // Get the price from the itemPrices state
+      const price = itemPrices['1005'] || 10.00; // Default to 10.00 if not found - using Roster Change item
+      
+      // Generate a unique request ID
+      const requestId = uuidv4();
+      
+      // Create payment details for player signing
+      const paymentDetails = createPaymentDetails(
+        'roster_change', // Changed to roster_change since there's no specific player_signing type
+        'Player Signing Request',
+        price,
+        `Request to sign ${playerName} (${playerEmail}) to ${team.name}`,
+        {
+          teamId: team.id,
+          captainId: user.id,
+          item_id: '1005', // Item ID for roster change
+          request_id: requestId,
+          playersIds: [] // Empty array since we don't have player IDs yet
+        }
+      );
+      
+      // Add player email and name to the metadata
+      paymentDetails.metadata = {
+        playerEmail,
+        playerName,
+        requestId,
+        requestType: 'player_signing',
+        // Store the data needed for creating the team change request
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: '1005',
+          oldValue: '',
+          newValue: playerEmail,
+          metadata: {
+            playerEmail,
+            playerName,
+            teamName: team.name
+          }
+        }
+      };
+      
+      // Navigate to the payment page with the payment details
+      navigate('/payments', { 
+        state: { 
+          paymentDetails,
+          changeRequestType: 'roster_change'
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setSigningError('Failed to process player signing request');
+      setProcessingPayment(false);
+      setShowPlayerSigningConfirmation(false);
+    }
   };
 
   if (loading) {
@@ -348,12 +771,36 @@ const TeamDashboard = () => {
             <p className="text-gray-300 mb-4">
               You are not currently a captain of any team. Would you like to create a new team?
             </p>
-            <button
-              onClick={() => navigate('/dashboard/create-team')}
-              className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600"
-            >
-              Create Team
-            </button>
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center">
+                  <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                    <Users className="w-5 h-5 text-green-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-medium">Team Creation</h3>
+                    <p className="text-gray-400 text-sm">Create a new team and become the captain</p>
+                  </div>
+                </div>
+                <div className="text-green-500 font-medium">
+                  ${itemPrices['1001'] || '25.00'}
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/dashboard/create-team')}
+                className="mt-2 px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm w-full"
+              >
+                Create Team - ${itemPrices['1001'] || '25.00'}
+              </button>
+            </div>
+            <div className="mt-4">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -492,7 +939,7 @@ const TeamDashboard = () => {
                 </div>
                 <p className="text-yellow-500 text-sm mt-2">
                   <DollarSign size={14} className="inline mr-1" />
-                  Changing online ID requires a $2.00 fee
+                  Changing online ID requires a $${itemPrices['1007'] || '5.00'} fee
                 </p>
               </div>
             )}
@@ -545,6 +992,252 @@ const TeamDashboard = () => {
               </table>
             </div>
           </div>
+
+          {/* Front Office Section */}
+          <div className="bg-gray-700 p-4 rounded-lg mt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-white">Front Office</h2>
+              <button
+                onClick={() => setShowFrontOffice(!showFrontOffice)}
+                className="p-2 bg-gray-600 text-gray-300 rounded hover:bg-gray-500 flex items-center"
+                title={showFrontOffice ? "Hide Front Office" : "Show Front Office"}
+              >
+                <ChevronRight size={16} className={`transform transition-transform ${showFrontOffice ? 'rotate-90' : ''}`} />
+              </button>
+            </div>
+            
+            {showFrontOffice && (
+              <div className="space-y-4">
+                {/* Player Signing Request */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                        <UserPlus className="w-5 h-5 text-green-500" />
+                      </div>
+                      <div>
+                        <h3 className="text-white font-medium">Player Signing Request</h3>
+                        <p className="text-gray-400 text-sm">Request to sign a player to your roster</p>
+                      </div>
+                    </div>
+                    <div className="text-green-500 font-medium">
+                      ${itemPrices['1005'] || '10.00'}
+                    </div>
+                  </div>
+                  
+                  {showPlayerSigningForm ? (
+                    <div className="mt-3">
+                      {signingError && (
+                        <div className="bg-red-900/20 border border-red-500 text-red-500 p-2 rounded-lg mb-3 text-sm">
+                          {signingError}
+                        </div>
+                      )}
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="playerEmail" className="block text-gray-400 text-sm mb-1">
+                            Player Email
+                          </label>
+                          <input
+                            id="playerEmail"
+                            type="email"
+                            value={playerEmail}
+                            onChange={(e) => setPlayerEmail(e.target.value)}
+                            className="w-full bg-gray-700 text-white p-2 rounded"
+                            placeholder="player@example.com"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label htmlFor="playerName" className="block text-gray-400 text-sm mb-1">
+                            Player Name
+                          </label>
+                          <input
+                            id="playerName"
+                            type="text"
+                            value={playerName}
+                            onChange={(e) => setPlayerName(e.target.value)}
+                            className="w-full bg-gray-700 text-white p-2 rounded"
+                            placeholder="Player Name"
+                          />
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <button
+                            onClick={() => {
+                              setShowPlayerSigningForm(false);
+                              setPlayerEmail('');
+                              setPlayerName('');
+                              setSigningError(null);
+                            }}
+                            className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 text-sm"
+                            disabled={processingPayment}
+                          >
+                            Cancel
+                          </button>
+                          
+                          <button
+                            onClick={handlePlayerSigningRequest}
+                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
+                            disabled={processingPayment}
+                          >
+                            Submit Request
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowPlayerSigningForm(true)}
+                      className="mt-2 px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm w-full"
+                    >
+                      Request Player Signing
+                    </button>
+                  )}
+                </div>
+                
+                {/* Online ID Change */}
+                <div 
+                  className="bg-gray-800 p-4 rounded-lg cursor-pointer hover:bg-gray-750 transition-colors"
+                  onClick={() => setIsEditingOnlineId(true)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                        <UserCog className="w-5 h-5 text-green-500" />
+                      </div>
+                      <div>
+                        <h3 className="text-white font-medium">Online ID Change</h3>
+                        <p className="text-gray-400 text-sm">Change a player's online ID</p>
+                      </div>
+                    </div>
+                    <div className="text-green-500 font-medium">
+                      ${itemPrices['1007'] || '5.00'}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Team Rebrand */}
+                <div 
+                  className="bg-gray-800 p-4 rounded-lg cursor-pointer hover:bg-gray-750 transition-colors"
+                  onClick={handleEditTeamName}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                        <Paintbrush className="w-5 h-5 text-green-500" />
+                      </div>
+                      <div>
+                        <h3 className="text-white font-medium">Team Rebrand</h3>
+                        <p className="text-gray-400 text-sm">Change your team's name</p>
+                      </div>
+                    </div>
+                    <div className="text-green-500 font-medium">
+                      ${itemPrices['1006'] || '20.00'}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Tournament Registration */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <div className="flex items-center mb-3">
+                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                      <Trophy className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-medium">Tournament Registration</h3>
+                      <p className="text-gray-400 text-sm">Register for upcoming tournaments</p>
+                    </div>
+                  </div>
+                  
+                  {availableTournaments.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {availableTournaments.map(tournament => (
+                        <div key={tournament.id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
+                          <span className="text-white">{tournament.name}</span>
+                          <button
+                            onClick={() => handleJoinTournament(tournament.id, tournament.name, tournament.payment_amount || itemPrices['1003'] || 75.00)}
+                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
+                          >
+                            Join ${tournament.payment_amount || itemPrices['1003'] || '75.00'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 text-sm mt-2">No tournaments available for registration</p>
+                  )}
+                </div>
+                
+                {/* League Registration */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <div className="flex items-center mb-3">
+                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                      <Trophy className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-medium">League Registration</h3>
+                      <p className="text-gray-400 text-sm">Register for active leagues</p>
+                    </div>
+                  </div>
+                  
+                  {availableLeagues.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {availableLeagues.map(league => (
+                        <div key={league.id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
+                          <span className="text-white">{league.name}</span>
+                          <button
+                            onClick={() => handleJoinLeague(league.id, league.name, league.payment_amount || itemPrices['1004'] || 100.00)}
+                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
+                          >
+                            Join ${league.payment_amount || itemPrices['1004'] || '100.00'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 text-sm mt-2">No leagues available for registration</p>
+                  )}
+                </div>
+                
+                {/* Transfer Ownership */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <div className="flex items-center mb-3">
+                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
+                      <Users className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-medium">Transfer Ownership</h3>
+                      <p className="text-gray-400 text-sm">Transfer team ownership to another player</p>
+                    </div>
+                  </div>
+                  
+                  {team.members.filter(member => member.user_id !== team.captain_id).length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {team.members
+                        .filter(member => member.user_id !== team.captain_id)
+                        .map(member => (
+                          <div key={member.user_id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
+                            <span className="text-white">{member.user?.username || member.user_id}</span>
+                            <button
+                              onClick={() => handleTransferOwnership(
+                                member.user_id, 
+                                member.user?.username || member.user_id
+                              )}
+                              className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
+                            >
+                              Transfer ${itemPrices['1002'] || '15.00'}
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 text-sm mt-2">No team members available to transfer ownership to</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -570,6 +1263,19 @@ const TeamDashboard = () => {
         cancelText="Cancel"
         onConfirm={processTeamRebrandPayment}
         onCancel={() => setShowRebrandConfirmation(false)}
+        type="warning"
+        isLoading={processingPayment}
+      />
+      
+      {/* Confirmation Dialog for Player Signing Request */}
+      <ConfirmationDialog
+        isOpen={showPlayerSigningConfirmation}
+        title="Confirm Player Signing Request"
+        message={`Requesting to sign ${playerName} (${playerEmail}) to your team will incur a $${itemPrices['1001'] || '5.00'} fee. Do you want to proceed?`}
+        confirmText="Proceed to Payment"
+        cancelText="Cancel"
+        onConfirm={processPlayerSigningPayment}
+        onCancel={() => setShowPlayerSigningConfirmation(false)}
         type="warning"
         isLoading={processingPayment}
       />

@@ -30,7 +30,7 @@ export class PaymentService {
         // Continue with payment processing even if DB record fails
       }
       
-      // Create request payload
+      // Create request payload - match the backend's expected format
       const payload = {
         sourceId,
         amount: paymentDetails.amount,
@@ -41,11 +41,11 @@ export class PaymentService {
       
       console.log('Payment params:', payload);
       
-      // Try the payment endpoints in order
+      // Try the payment endpoints in order - using the proxied endpoints
       const possibleEndpoints = [
-        '/api/payments/square',
-        '/api/square/payments',
-        '/api/process-payment'
+        '/api/payments',
+        '/payments',
+        '/api/payments/process'
       ];
       
       let response = null;
@@ -68,6 +68,10 @@ export class PaymentService {
             endpointUsed = endpoint;
             console.log(`Payment successful with endpoint: ${endpoint}`, responseData);
             break;
+          } else {
+            // Log the error response for debugging
+            const errorText = await response.text();
+            console.error(`Error response from ${endpoint}:`, errorText);
           }
         } catch (endpointError) {
           console.error(`Error with endpoint ${endpoint}:`, endpointError);
@@ -91,8 +95,8 @@ export class PaymentService {
       
       return {
         success: true,
-        paymentId: responseData.id,
-        receiptUrl: responseData.receiptUrl
+        paymentId: responseData.payment?.id || responseData.id,
+        receiptUrl: responseData.payment?.receiptUrl || responseData.receiptUrl
       };
     } catch (error) {
       console.error('Payment processing error:', error);
@@ -139,6 +143,9 @@ export class PaymentService {
    * Record a completed payment in the database
    */
   private async recordPaymentInDatabase(responseData: any, paymentDetails: PaymentDetails, endpointUsed: string) {
+    // Extract payment data from the response
+    const payment = responseData.payment || responseData;
+    
     const metadata: PaymentMetadata = {
       type: paymentDetails.type,
       eventId: paymentDetails.eventId,
@@ -146,26 +153,65 @@ export class PaymentService {
       playersIds: paymentDetails.playersIds,
       playerId: paymentDetails.playerId,
       request_id: paymentDetails.request_id,
-      squarePaymentId: responseData.id,
-      receiptUrl: responseData.receiptUrl,
-      square_response: responseData
+      squarePaymentId: payment.id,
+      receiptUrl: payment.receiptUrl,
+      square_response: payment
     };
     
     const paymentUpdate: Partial<DbPayment> = {
-      payment_id: responseData.id,
+      payment_id: payment.id,
       status: 'completed',
       payment_details: {
         endpoint: endpointUsed,
-        response: responseData
+        response: payment
       },
       metadata,
       updated_at: new Date().toISOString()
     };
     
-    return await supabase
-      .from('payments')
-      .update(paymentUpdate)
-      .eq('id', paymentDetails.id);
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .update(paymentUpdate)
+        .eq('id', paymentDetails.id);
+        
+      if (error) {
+        console.error('Error updating payment record:', error);
+        
+        // If the update fails, try to create a new record
+        const newPaymentRecord: Partial<DbPayment> = {
+          id: paymentDetails.id,
+          user_id: paymentDetails.captainId || '',
+          amount: paymentDetails.amount,
+          currency: 'USD',
+          payment_method: 'square',
+          status: 'completed',
+          description: paymentDetails.description,
+          metadata,
+          payment_id: payment.id,
+          payment_details: {
+            endpoint: endpointUsed,
+            response: payment
+          },
+          reference_id: paymentDetails.referenceId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { data: newData, error: newError } = await supabase
+          .from('payments')
+          .insert(newPaymentRecord);
+          
+        if (newError) {
+          console.error('Error creating new payment record:', newError);
+        }
+      }
+      
+      return data;
+    } catch (err) {
+      console.error('Error recording payment in database:', err);
+      return null;
+    }
   }
   
   /**
@@ -266,22 +312,27 @@ export class PaymentService {
   }
   
   /**
-   * Mock payment response for testing or when all endpoints fail
+   * Mock payment response for testing
    */
   private mockPaymentResponse(paymentDetails: PaymentDetails) {
-    const mockId = `mock_${uuidv4()}`;
+    const mockId = uuidv4();
+    
     return {
-      id: mockId,
-      status: 'COMPLETED',
-      amountMoney: {
-        amount: paymentDetails.amount * 100,
-        currency: 'USD'
-      },
-      receiptUrl: `https://example.com/receipts/${mockId}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      referenceId: paymentDetails.referenceId,
-      note: paymentDetails.description
+      success: true,
+      payment: {
+        id: mockId,
+        status: 'COMPLETED',
+        receiptUrl: `https://example.com/receipts/${mockId}`,
+        amount: paymentDetails.amount,
+        currency: 'USD',
+        created_at: new Date().toISOString(),
+        card_details: {
+          card: {
+            last_4: '1111',
+            brand: 'VISA'
+          }
+        }
+      }
     };
   }
   

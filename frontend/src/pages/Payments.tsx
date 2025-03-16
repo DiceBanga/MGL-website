@@ -9,6 +9,7 @@ import { PaymentService } from '../services/PaymentService';
 import { DbPayment } from '../types/database';
 import { validatePaymentDetails } from '../utils/paymentUtils';
 import ConfirmationDialog from '../components/ConfirmationDialog';
+import { v4 as uuidv4 } from 'uuid';
 
 // Create a singleton instance of the payment service
 const paymentService = new PaymentService();
@@ -34,10 +35,22 @@ const Payments = () => {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
+  // Add onSuccessCallback to the component state
+  const [onSuccessCallback, setOnSuccessCallback] = useState<((paymentId: string) => Promise<void>) | null>(null);
+
+  // Add state for change request type
+  const [changeRequestType, setChangeRequestType] = useState<string | null>(null);
+
   useEffect(() => {
     // Get payment details from location state or redirect back
-    if (location.state?.paymentDetails) {
-      const details = location.state.paymentDetails;
+    const state = location.state as { 
+      paymentDetails?: PaymentDetails;
+      onSuccess?: (paymentId: string) => Promise<void>;
+      changeRequestType?: string;
+    };
+    
+    if (state?.paymentDetails) {
+      const details = state.paymentDetails;
       
       // Validate payment details
       const validationError = validatePaymentDetails(details);
@@ -50,7 +63,15 @@ const Payments = () => {
     } else {
       navigate('/dashboard');
     }
-  }, [location, navigate]);
+    
+    if (state?.onSuccess) {
+      setOnSuccessCallback(state.onSuccess);
+    }
+    
+    if (state?.changeRequestType) {
+      setChangeRequestType(state.changeRequestType);
+    }
+  }, [location.state, navigate]);
 
   useEffect(() => {
     if (user) {
@@ -156,6 +177,60 @@ const Payments = () => {
     setShowConfirmation(true);
   };
   
+  const createTeamChangeRequest = async (
+    paymentId: string,
+    changeRequestType: string,
+    paymentDetails: PaymentDetails
+  ) => {
+    if (!paymentDetails.metadata?.changeRequestData) {
+      console.error('Change request data is missing');
+      return null;
+    }
+    
+    const { 
+      teamId, 
+      requestedBy, 
+      itemId, 
+      playerId, 
+      oldValue, 
+      newValue, 
+      metadata 
+    } = paymentDetails.metadata.changeRequestData;
+    
+    try {
+      // Generate a UUID for the request ID
+      const requestId = uuidv4();
+      
+      const { data, error } = await supabase
+        .from('team_change_requests')
+        .insert({
+          id: requestId,
+          team_id: teamId,
+          request_type: changeRequestType,
+          requested_by: requestedBy,
+          player_id: playerId,
+          old_value: oldValue,
+          new_value: newValue,
+          status: 'pending',
+          payment_id: paymentId,
+          item_id: itemId,
+          metadata
+        })
+        .select()
+        .single();
+        
+      if (error) {
+        console.error('Error creating team change request:', error);
+        return null;
+      }
+      
+      return data;
+    } catch (err) {
+      console.error('Error creating team change request:', err);
+      return null;
+    }
+  };
+
   const confirmSquarePayment = async () => {
     if (!paymentDetails || !pendingToken) {
       setError('Payment details or token are missing');
@@ -173,6 +248,23 @@ const Payments = () => {
         setSuccess(true);
         setPaymentId(result.paymentId || '');
         setReceiptUrl(result.receiptUrl || '');
+        
+        // Create a team change request if needed
+        if (changeRequestType && result.paymentId && paymentDetails) {
+          try {
+            const changeRequest = await createTeamChangeRequest(
+              result.paymentId,
+              changeRequestType,
+              paymentDetails
+            );
+            
+            if (changeRequest) {
+              console.log('Team change request created:', changeRequest);
+            }
+          } catch (changeRequestError) {
+            console.error('Error creating team change request:', changeRequestError);
+          }
+        }
       } else {
         throw new Error(result.error || 'Payment processing failed');
       }

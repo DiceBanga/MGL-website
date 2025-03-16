@@ -76,8 +76,11 @@ export const createPaymentDetails = (
     request_id
   );
   
+  // Generate a valid UUID for the payment ID
+  const paymentId = uuidv4();
+  
   return {
-    id: `payment-${uuidv4()}`,
+    id: paymentId,
     type,
     name,
     amount,
@@ -127,6 +130,10 @@ export const validatePaymentDetails = (details: PaymentDetails): string | null =
       if (!details.playersIds || details.playersIds.length === 0) {
         return 'Player IDs are required for roster change';
       }
+      break;
+    case 'player_signing':
+      if (!details.teamId) return 'Team ID is required for player signing';
+      if (!details.captainId) return 'Captain ID is required for player signing';
       break;
     case 'online_id_change':
       if (!details.teamId) return 'Team ID is required for online ID change';

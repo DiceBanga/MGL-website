@@ -1,6 +1,6 @@
 export interface PaymentDetails {
   id: string;
-  type: 'tournament' | 'league' | 'team_transfer' | 'roster_change' | 'online_id_change' | 'team_rebrand';
+  type: 'tournament' | 'league' | 'team_transfer' | 'roster_change' | 'online_id_change' | 'team_rebrand' | 'player_signing';
   name: string;
   amount: number;
   description: string;
@@ -12,10 +12,11 @@ export interface PaymentDetails {
   request_id?: string;  // Used for change requests
   referenceId?: string;
   item_id?: string;     // Item ID for the payment
+  metadata?: Record<string, any>; // Additional metadata for specific payment types
 }
 
 export interface PaymentMetadata {
-  type: 'tournament' | 'league' | 'team_transfer' | 'roster_change' | 'online_id_change' | 'team_rebrand';
+  type: 'tournament' | 'league' | 'team_transfer' | 'roster_change' | 'online_id_change' | 'team_rebrand' | 'player_signing';
   eventId?: string;
   teamId?: string;
   playersIds?: string[]; // Required to ensure proper data handling
