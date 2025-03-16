@@ -29,7 +29,9 @@ function Teams() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-white">Teams</h1>
           <div className="flex space-x-4">
-            <select className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700">
+            <select 
+              aria-label="Filter teams"
+              className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700">
               <option>All Teams</option>
               <option>Active</option>
               <option>Top Ranked</option>
