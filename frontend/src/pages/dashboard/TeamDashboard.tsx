@@ -1148,6 +1148,66 @@ const TeamDashboard = () => {
     }
   }, [showTeamRebrandModal, team]);
 
+  // Add this function to process the payment result and complete the transfer
+  const completeTeamTransfer = async (requestId: string, status: 'completed' | 'failed') => {
+    try {
+      // First update the request status
+      const { data: requestData, error: updateError } = await supabase
+        .from('team_change_requests')
+        .update({ status: status })
+        .eq('id', requestId)
+        .select()
+        .single();
+      
+      if (updateError) throw new Error('Error updating request status: ' + updateError.message);
+      
+      // If payment was successful, execute the transfer
+      if (status === 'completed' && requestData) {
+        // Get the new captain ID from the request
+        const newCaptainId = requestData.player_id;
+        
+        // Execute the transfer using RPC
+        const { error: transferError } = await supabase.rpc('transfer_team_ownership', {
+          p_team_id: teamId,
+          p_new_captain_id: newCaptainId
+        });
+        
+        if (transferError) throw new Error('Error transferring ownership: ' + transferError.message);
+        
+        // Refresh the team data to show the new captain
+        fetchTeamData();
+        setSuccessMessage('Team ownership transferred successfully!');
+      } else if (status === 'failed') {
+        setError('Payment failed. Team ownership was not transferred.');
+      }
+    } catch (err) {
+      console.error('Error completing transfer:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred during transfer completion');
+    }
+  };
+
+  // Add this effect to handle payment returns
+  useEffect(() => {
+    // Check if we're returning from a payment
+    const location = window.location;
+    const params = new URLSearchParams(location.search);
+    
+    const paymentStatus = params.get('status');
+    const requestId = params.get('requestId');
+    
+    if (paymentStatus && requestId) {
+      // Clear the URL parameters
+      window.history.replaceState({}, document.title, location.pathname);
+      
+      // Process the payment result
+      if (paymentStatus === 'success') {
+        completeTeamTransfer(requestId, 'completed');
+      } else if (paymentStatus === 'failed') {
+        completeTeamTransfer(requestId, 'failed');
+      }
+    }
+  }, []);
+
   if (!isCaptain) {
     return (
       <div className="bg-gray-900/50 py-12">
