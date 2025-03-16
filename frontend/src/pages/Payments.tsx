@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { PaymentDetails } from '../types/payment';
 import { PaymentForm, CreditCard as SquareCard } from 'react-square-web-payments-sdk';
 import { SquarePaymentService } from '../services/SquarePaymentService';
+import { DbPayment } from '../types/database';
 
 const squarePaymentService = new SquarePaymentService();
 
@@ -23,6 +24,8 @@ const Payments = () => {
   const [paymentId, setPaymentId] = useState('');
   const [receiptUrl, setReceiptUrl] = useState('');
   const [isProcessing, setProcessing] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState<DbPayment[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     // Get payment details from location state or redirect back
@@ -33,23 +36,59 @@ const Payments = () => {
     }
   }, [location, navigate]);
 
+  useEffect(() => {
+    if (user) {
+      fetchPaymentHistory();
+    }
+  }, [user]);
+
+  const fetchPaymentHistory = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingHistory(true);
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      setPaymentHistory(data as DbPayment[]);
+    } catch (err) {
+      console.error('Error fetching payment history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const recordPaymentInDatabase = async (provider: string, paymentResult?: any) => {
     if (!user || !paymentDetails) return false;
     
     try {
+      const paymentData: Partial<DbPayment> = {
+        user_id: user.id,
+        amount: paymentDetails.amount,
+        currency: 'USD',
+        payment_method: provider,
+        status: paymentResult?.success ? 'completed' : 'pending',
+        description: paymentDetails.description || null,
+        metadata: paymentDetails,
+        payment_details: paymentResult || null,
+        payment_id: paymentResult?.paymentId || null,
+        reference_id: paymentDetails.referenceId || null
+      };
+
       const { data, error } = await supabase
         .from('payments')
-        .insert([
-          {
-            user_id: user.id,
-            amount: paymentDetails.amount,
-            provider,
-            payment_details: paymentDetails,
-            payment_result: paymentResult || null
-          }
-        ]);
+        .insert(paymentData);
 
       if (error) throw error;
+      
+      // Refresh payment history after recording a new payment
+      fetchPaymentHistory();
+      
       return true;
     } catch (err) {
       console.error('Error recording payment:', err);
@@ -203,177 +242,238 @@ const Payments = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 py-12">
-      <div className="max-w-3xl mx-auto px-4">
-        <button
+    <div className="bg-gray-900 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <button 
           onClick={handleBack}
-          className="flex items-center text-gray-300 hover:text-white mb-6"
+          className="flex items-center text-green-500 hover:text-green-400 mb-6"
         >
           <ArrowLeft className="w-5 h-5 mr-2" />
           Back
         </button>
         
-        <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-          <div className="p-6 border-b border-gray-700">
-            <h2 className="text-2xl font-bold text-white">Complete Your Payment</h2>
-            <p className="text-gray-300 mt-1">
-              Secure payment for {paymentDetails.name}
+        {success ? (
+          <div className="bg-gray-800 rounded-lg p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="w-16 h-16 text-green-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Payment Successful!</h2>
+            <p className="text-gray-300 mb-6">
+              Thank you for your payment. Your transaction has been completed.
             </p>
+            {paymentId && (
+              <p className="text-gray-400 mb-2">Payment ID: {paymentId}</p>
+            )}
+            {receiptUrl && (
+              <a 
+                href={receiptUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-green-500 hover:text-green-400"
+              >
+                View Receipt
+              </a>
+            )}
+            <div className="mt-8">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-md"
+              >
+                Return to Dashboard
+              </button>
+            </div>
           </div>
-          
-          <div className="p-6">
-            <div className="flex flex-col md:flex-row gap-8">
-              {/* Payment Summary */}
-              <div className="md:w-1/3">
-                <h3 className="text-lg font-semibold text-white mb-4">Payment Summary</h3>
-                <div className="bg-gray-700/50 rounded-lg p-4">
-                  <div className="mb-4">
-                    <p className="text-gray-300 text-sm">Item</p>
-                    <p className="text-white font-medium">{paymentDetails.name}</p>
-                  </div>
-                  <div className="mb-4">
-                    <p className="text-gray-300 text-sm">Description</p>
-                    <p className="text-white">{paymentDetails.description}</p>
-                  </div>
-                  <div className="border-t border-gray-600 my-4"></div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300">Total:</span>
-                    <span className="text-xl font-bold text-white">${paymentDetails.amount.toFixed(2)}</span>
-                  </div>
-                </div>
-                
-                <div className="mt-6 bg-green-900/20 border border-green-800/30 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <Shield className="w-5 h-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <p className="text-sm text-gray-300">
-                      Your payment information is encrypted and secure. We never store your full card details.
-                    </p>
-                  </div>
-                </div>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold text-white mb-6">
+              {paymentDetails?.name || 'Payment'}
+            </h1>
+            
+            <div className="bg-gray-800 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-semibold text-white mb-4">Payment Summary</h2>
+              <div className="flex justify-between py-3 border-b border-gray-700">
+                <span className="text-gray-300">Description</span>
+                <span className="text-white">{paymentDetails?.description || 'N/A'}</span>
               </div>
-              
-              {/* Payment Method Selection */}
-              <div className="md:w-2/3">
-                {!paymentMethod ? (
+              <div className="flex justify-between py-3 border-b border-gray-700">
+                <span className="text-gray-300">Amount</span>
+                <span className="text-white font-semibold">
+                  ${paymentDetails?.amount.toFixed(2) || '0.00'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Payment method selection */}
+            <div className="bg-gray-800 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-semibold text-white mb-4">Select Payment Method</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  onClick={() => setPaymentMethod('square')}
+                  className={`flex items-center p-4 rounded-lg border ${
+                    paymentMethod === 'square' 
+                      ? 'border-green-500 bg-gray-700' 
+                      : 'border-gray-700 hover:bg-gray-700'
+                  }`}
+                >
+                  <CreditCard className="w-6 h-6 text-gray-400 mr-3" />
+                  <div className="text-left">
+                    <div className="text-white font-medium">Credit Card</div>
+                    <div className="text-gray-400 text-sm">Pay with Visa, Mastercard, etc.</div>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setPaymentMethod('cashapp')}
+                  className={`flex items-center p-4 rounded-lg border ${
+                    paymentMethod === 'cashapp' 
+                      ? 'border-green-500 bg-gray-700' 
+                      : 'border-gray-700 hover:bg-gray-700'
+                  }`}
+                >
+                  <DollarSign className="w-6 h-6 text-gray-400 mr-3" />
+                  <div className="text-left">
+                    <div className="text-white font-medium">Cash App</div>
+                    <div className="text-gray-400 text-sm">Pay with Cash App</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
+            {/* Payment form based on selected method */}
+            {paymentMethod && (
+              <div className="bg-gray-800 rounded-lg p-6 mb-8">
+                <h2 className="text-xl font-semibold text-white mb-4">
+                  {paymentMethod === 'square' ? 'Credit Card Details' : 'Cash App Details'}
+                </h2>
+                
+                {error && (
+                  <div className="bg-red-900/30 border border-red-800 rounded-md p-4 mb-6 flex items-start">
+                    <AlertCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-200">{error}</p>
+                  </div>
+                )}
+                
+                {paymentMethod === 'square' ? (
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-4">Select Payment Method</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <button
-                        onClick={() => setPaymentMethod('square')}
-                        className="bg-gray-700 hover:bg-gray-600 rounded-lg p-6 text-left transition-colors"
+                    <div className="mb-6">
+                      <label htmlFor="cardName" className="block text-gray-300 mb-2">Name on Card</label>
+                      <input
+                        id="cardName"
+                        type="text"
+                        value={cardName}
+                        onChange={(e) => setCardName(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white"
+                        placeholder="John Doe"
+                        disabled={isProcessing}
+                      />
+                    </div>
+                    <div className="mb-6">
+                      <PaymentForm
+                        applicationId={import.meta.env.VITE_SQUARE_APP_ID}
+                        locationId={import.meta.env.VITE_SQUARE_LOCATION_ID}
+                        cardTokenizeResponseReceived={async (token) => {
+                          if (token.token) {
+                            await handleSquarePayment(token.token);
+                          } else {
+                            setError('Failed to process payment: Invalid token');
+                          }
+                        }}
+                        createVerificationDetails={() => ({
+                          amount: String((paymentDetails?.amount || 0).toFixed(2)),
+                          currencyCode: 'USD',
+                          intent: 'CHARGE',
+                          billingContact: {
+                            familyName: cardName
+                          }
+                        })}
                       >
-                        <div className="flex items-center mb-4">
-                          <div className="bg-blue-500/10 p-3 rounded-full mr-4">
-                            <CreditCard className="h-6 w-6 text-blue-500" />
-                          </div>
-                          <div>
-                            <h4 className="text-white font-medium">Credit Card</h4>
-                            <p className="text-gray-400 text-sm">Visa, Mastercard, Amex</p>
-                          </div>
-                        </div>
-                        <p className="text-gray-300 text-sm">
-                          Secure payment via Square
-                        </p>
-                      </button>
-                      
-                      <button
-                        onClick={() => setPaymentMethod('cashapp')}
-                        className="bg-gray-700 hover:bg-gray-600 rounded-lg p-6 text-left transition-colors"
-                      >
-                        <div className="flex items-center mb-4">
-                          <div className="bg-green-500/10 p-3 rounded-full mr-4">
-                            <DollarSign className="h-6 w-6 text-green-500" />
-                          </div>
-                          <div>
-                            <h4 className="text-white font-medium">Cash App</h4>
-                            <p className="text-gray-400 text-sm">Pay with your Cash App account</p>
-                          </div>
-                        </div>
-                        <p className="text-gray-300 text-sm">
-                          Fast and convenient mobile payment
-                        </p>
-                      </button>
+                        <SquareCard />
+                      </PaymentForm>
+                    </div>
+                    <div className="flex items-center text-gray-400 text-sm mb-4">
+                      <Shield className="w-4 h-4 mr-2" />
+                      Your payment information is secure and encrypted
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    <h3 className="text-lg font-semibold text-white mb-4">
-                      {paymentMethod === 'square' ? 'Credit Card Details' : 'Cash App Payment'}
-                    </h3>
-                    
-                    {error && (
-                      <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-4 mb-6 flex items-start">
-                        <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
-                        <p className="text-sm text-red-300">{error}</p>
-                      </div>
-                    )}
-                    
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      {paymentMethod === 'square' ? (
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Name on Card
-                            </label>
-                            <input
-                              type="text"
-                              value={cardName}
-                              onChange={(e) => setCardName(e.target.value)}
-                              placeholder="John Doe"
-                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                              required
-                            />
-                          </div>
-                          <PaymentForm
-                            applicationId={import.meta.env.VITE_SQUARE_APP_ID}
-                            locationId={import.meta.env.VITE_SQUARE_LOCATION_ID}
-                            cardTokenizeResponseReceived={async (token) => {
-                              await handleSquarePayment(token.token);
-                            }}
-                            createVerificationDetails={() => ({
-                              amount: String((paymentDetails?.amount || 0).toFixed(2)),
-                              currencyCode: 'USD',
-                              intent: 'CHARGE',
-                              billingContact: {
-                                familyName: cardName
-                              }
-                            })}
-                          >
-                            <SquareCard />
-                          </PaymentForm>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              Cash App Username
-                            </label>
-                            <input
-                              type="text"
-                              value={cashAppUsername}
-                              onChange={(e) => setCashAppUsername(e.target.value)}
-                              placeholder="$username"
-                              className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500"
-                              required
-                            />
-                          </div>
-                          
-                          <div className="bg-gray-700/50 rounded-lg p-4">
-                            <p className="text-gray-300 text-sm mb-2">
-                              After clicking "Pay with Cash App", you'll be prompted to confirm the payment in your Cash App.
-                            </p>
-                            <p className="text-gray-300 text-sm">
-                              Send payment to: <span className="text-green-500 font-medium">$MilitiaGamingLeague</span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </form>
-                  </div>
+                  <form onSubmit={handleSubmit}>
+                    <div className="mb-6">
+                      <label htmlFor="cashAppUsername" className="block text-gray-300 mb-2">Cash App Username</label>
+                      <input
+                        id="cashAppUsername"
+                        type="text"
+                        value={cashAppUsername}
+                        onChange={(e) => setCashAppUsername(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white"
+                        placeholder="$username"
+                        disabled={loading}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={loading}
+                    >
+                      {loading ? 'Processing...' : `Pay $${paymentDetails?.amount.toFixed(2) || '0.00'}`}
+                    </button>
+                  </form>
                 )}
               </div>
+            )}
+          </>
+        )}
+        
+        {/* Payment History Section */}
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold text-white mb-6">Payment History</h2>
+          
+          {loadingHistory ? (
+            <div className="bg-gray-800 rounded-lg p-6">
+              <p className="text-gray-400">Loading payment history...</p>
             </div>
-          </div>
+          ) : paymentHistory.length === 0 ? (
+            <div className="bg-gray-800 rounded-lg p-6 text-center">
+              <p className="text-gray-400">No payment history available.</p>
+            </div>
+          ) : (
+            <div className="bg-gray-800 rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-700">
+                    <th className="py-3 px-4 text-left text-gray-300 font-medium">Date</th>
+                    <th className="py-3 px-4 text-left text-gray-300 font-medium">Description</th>
+                    <th className="py-3 px-4 text-left text-gray-300 font-medium">Amount</th>
+                    <th className="py-3 px-4 text-left text-gray-300 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentHistory.map((payment) => (
+                    <tr key={payment.id} className="border-t border-gray-700">
+                      <td className="py-3 px-4 text-gray-300">
+                        {new Date(payment.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-4 text-white">
+                        {payment.description || 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-white">
+                        ${payment.amount.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                          payment.status === 'completed' ? 'bg-green-900/30 text-green-400' :
+                          payment.status === 'pending' ? 'bg-yellow-900/30 text-yellow-400' :
+                          payment.status === 'failed' ? 'bg-red-900/30 text-red-400' :
+                          'bg-gray-700 text-gray-400'
+                        }`}>
+                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

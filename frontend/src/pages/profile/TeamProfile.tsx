@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Users, Trophy, Calendar, BarChart2, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { DbTeam, DbTeamMember } from '../../types/database';
 
 interface TeamMember {
   id: string;
@@ -20,6 +21,13 @@ interface Team {
   tournaments_played: number;
 }
 
+interface TeamWithStandings extends DbTeam {
+  standings: {
+    wins: number;
+    losses: number;
+  }[];
+}
+
 const TeamProfile = () => {
   const { teamId } = useParams();
   const [team, setTeam] = useState<Team | null>(null);
@@ -33,61 +41,75 @@ const TeamProfile = () => {
   const fetchTeamData = async () => {
     if (!teamId) return;
 
-    // Fetch team data
-    const { data: teamData, error: teamError } = await supabase
-      .from('teams')
-      .select(`
-        *,
-        standings (
-          wins,
-          losses
-        )
-      `)
-      .eq('id', teamId)
-      .single();
+    try {
+      // Fetch team data
+      const { data: teamData, error: teamError } = await supabase
+        .from('teams')
+        .select(`
+          *,
+          standings (
+            wins,
+            losses
+          )
+        `)
+        .eq('id', teamId)
+        .single();
 
-    if (teamError) {
-      console.error('Error fetching team:', teamError);
+      if (teamError) {
+        console.error('Error fetching team:', teamError);
+        return;
+      }
+
+      const teamWithStandings = teamData as TeamWithStandings;
+      
+      setTeam({
+        id: teamWithStandings.id,
+        name: teamWithStandings.name,
+        logo_url: teamWithStandings.logo_url,
+        website: teamWithStandings.website,
+        wins: teamWithStandings.standings?.[0]?.wins || 0,
+        losses: teamWithStandings.standings?.[0]?.losses || 0,
+        tournaments_played: 0 // This will be set later if needed
+      });
+
+      // Fetch team members
+      const { data: membersData, error: membersError } = await supabase
+        .from('team_players')
+        .select(`
+          user_id,
+          role,
+          jersey_number,
+          players (
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('team_id', teamId);
+
+      if (membersError) {
+        console.error('Error fetching members:', membersError);
+        return;
+      }
+
+      interface MemberWithPlayerData extends DbTeamMember {
+        players: {
+          display_name: string;
+          avatar_url: string | null;
+        };
+      }
+
+      setMembers(((membersData || []) as unknown as MemberWithPlayerData[]).map(member => ({
+        id: member.user_id,
+        display_name: member.players.display_name,
+        role: member.role,
+        jersey_number: member.jersey_number
+      })));
+
       setLoading(false);
-      return;
-    }
-
-    // For demo purposes, using static stats
-    // In production, these would come from the database
-    setTeam({
-      ...teamData,
-      wins: teamData.standings?.[0]?.wins || 28,
-      losses: teamData.standings?.[0]?.losses || 4,
-      tournaments_played: 5
-    });
-
-    // Fetch team members
-    const { data: membersData, error: membersError } = await supabase
-      .from('team_players')
-      .select(`
-        user_id,
-        role,
-        jersey_number,
-        players!inner (
-          display_name
-        )
-      `)
-      .eq('team_id', teamId);
-
-    if (membersError) {
-      console.error('Error fetching members:', membersError);
+    } catch (error) {
+      console.error('Error in fetchTeamData:', error);
       setLoading(false);
-      return;
     }
-
-    setMembers(membersData.map(member => ({
-      id: member.user_id,
-      display_name: member.players.display_name,
-      role: member.role,
-      jersey_number: member.jersey_number
-    })));
-
-    setLoading(false);
   };
 
   if (loading) {

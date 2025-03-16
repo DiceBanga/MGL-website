@@ -3,6 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Users, Trophy, Calendar, Settings, Plus, Trash2, User2, Globe, Mail, AlertTriangle, Check, X, DollarSign, ChevronRight, UserCog, Paintbrush, UserPlus } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
+import { 
+  DbTeam, 
+  DbTeamMember, 
+  DbJoinRequest, 
+  DbTournamentRegistration, 
+  DbLeagueRegistration,
+  DbTournamentRoster,
+  DbLeagueRoster
+} from '../../types/database';
 
 interface TeamMember {
   id: string;
@@ -188,6 +197,10 @@ const TeamDashboard = () => {
     step: 1
   });
 
+  // Add state variables for tournament and league registrations
+  const [tournamentRegistrations, setTournamentRegistrations] = useState<TournamentRegistration[]>([]);
+  const [leagueRegistrations, setLeagueRegistrations] = useState<LeagueRegistration[]>([]);
+
   useEffect(() => {
     if (user) {
       fetchTeamData();
@@ -227,19 +240,26 @@ const TeamDashboard = () => {
       return;
     }
 
-    setTeam(teamData);
-    setFormData(teamData);
+    setTeam(teamData as Team);
+    setFormData({
+      name: teamData.name,
+      website: teamData.website,
+      email: teamData.email,
+      team_tag: teamData.team_tag,
+      description: teamData.description
+    });
     setIsCaptain(teamData.captain_id === user?.id);
 
     // Fetch team members
     const { data: membersData, error: membersError } = await supabase
       .from('team_players')
       .select(`
+        team_id,
         user_id,
         role,
         jersey_number,
         can_be_deleted,
-        players!inner (
+        players (
           display_name,
           avatar_url
         )
@@ -251,7 +271,7 @@ const TeamDashboard = () => {
       return;
     }
 
-    setMembers(membersData.map(member => ({
+    setMembers(((membersData || []) as unknown as DbTeamMember[]).map(member => ({
       id: member.user_id,
       display_name: member.players.display_name,
       role: member.role,
@@ -266,9 +286,11 @@ const TeamDashboard = () => {
         .from('team_join_requests')
         .select(`
           id,
+          team_id,
           user_id,
+          status,
           created_at,
-          players!inner (
+          players (
             display_name,
             avatar_url
           )
@@ -276,8 +298,10 @@ const TeamDashboard = () => {
         .eq('team_id', teamId)
         .eq('status', 'pending');
 
-      if (!requestsError && requestsData) {
-        setJoinRequests(requestsData.map(request => ({
+      if (requestsError) {
+        console.error('Error fetching join requests:', requestsError);
+      } else if (requestsData) {
+        setJoinRequests(((requestsData || []) as unknown as DbJoinRequest[]).map(request => ({
           id: request.id,
           user_id: request.user_id,
           display_name: request.players.display_name,
@@ -321,52 +345,86 @@ const TeamDashboard = () => {
 
     try {
       // Fetch tournament registrations
-      const { data: tournamentRegs, error: tournamentError } = await supabase
+      const { data: tournamentData, error: tournamentError } = await supabase
         .from('tournament_registrations')
         .select(`
           id,
           status,
           registration_date,
-          tournaments:tournament_id(name),
-          tournament_rosters(
+          payment_status,
+          tournaments (
+            name
+          ),
+          tournament_rosters (
             player_id,
-            players:player_id(display_name, avatar_url)
+            players (
+              display_name,
+              avatar_url
+            )
           )
         `)
         .eq('team_id', teamId);
 
       if (tournamentError) {
-        throw new Error('Error fetching tournament registrations: ' + tournamentError.message);
+        console.error('Error fetching tournament registrations:', tournamentError);
+      } else if (tournamentData) {
+        const tournamentRegs = (tournamentData as any[]).map(reg => ({
+          id: reg.id,
+          status: reg.status,
+          registration_date: reg.registration_date,
+          tournaments: {
+            name: reg.tournaments.name
+          },
+          tournament_rosters: reg.tournament_rosters || []
+        }));
+        setTournamentRegistrations(tournamentRegs);
       }
 
       // Fetch league registrations
-      const { data: leagueRegs, error: leagueError } = await supabase
+      const { data: leagueData, error: leagueError } = await supabase
         .from('league_registrations')
         .select(`
           id,
           status,
           registration_date,
-          leagues:league_id(name),
-          league_rosters(
+          payment_status,
+          leagues (
+            name
+          ),
+          league_rosters (
             player_id,
-            players:player_id(display_name, avatar_url)
+            players (
+              display_name,
+              avatar_url
+            )
           )
         `)
         .eq('team_id', teamId);
 
       if (leagueError) {
-        throw new Error('Error fetching league registrations: ' + leagueError.message);
+        console.error('Error fetching league registrations:', leagueError);
+      } else if (leagueData) {
+        const leagueRegs = (leagueData as any[]).map(reg => ({
+          id: reg.id,
+          status: reg.status,
+          registration_date: reg.registration_date,
+          leagues: {
+            name: reg.leagues.name
+          },
+          league_rosters: reg.league_rosters || []
+        }));
+        setLeagueRegistrations(leagueRegs);
       }
 
       // Combine and format registrations
       const formattedRegistrations: Registration[] = [
-        ...((tournamentRegs || []) as unknown as TournamentRegistration[]).map(reg => ({
+        ...tournamentRegistrations.map(reg => ({
           id: reg.id,
           name: reg.tournaments.name,
           type: 'tournament' as const,
           status: reg.status,
           date: new Date(reg.registration_date).toLocaleDateString(),
-          roster: reg.tournament_rosters.map(roster => ({
+          roster: (reg.tournament_rosters || []).map(roster => ({
             id: roster.player_id,
             display_name: roster.players.display_name,
             role: 'player',
@@ -375,13 +433,13 @@ const TeamDashboard = () => {
             avatar_url: roster.players.avatar_url
           }))
         })),
-        ...((leagueRegs || []) as unknown as LeagueRegistration[]).map(reg => ({
+        ...leagueRegistrations.map(reg => ({
           id: reg.id,
           name: reg.leagues.name,
           type: 'league' as const,
           status: reg.status,
           date: new Date(reg.registration_date).toLocaleDateString(),
-          roster: reg.league_rosters.map(roster => ({
+          roster: (reg.league_rosters || []).map(roster => ({
             id: roster.player_id,
             display_name: roster.players.display_name,
             role: 'player',
@@ -1285,7 +1343,8 @@ const TeamDashboard = () => {
                         name="name"
                         value={formData.name || ''}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                        aria-label="Team Name"
                       />
                     </div>
 
@@ -1298,7 +1357,8 @@ const TeamDashboard = () => {
                         name="website"
                         value={formData.website || ''}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                        aria-label="Website"
                       />
                     </div>
 
@@ -1311,7 +1371,8 @@ const TeamDashboard = () => {
                         name="email"
                         value={formData.email || ''}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                        aria-label="Email"
                       />
                     </div>
 
@@ -1976,6 +2037,7 @@ const TeamDashboard = () => {
                   placeholder="Enter team name"
                   value={newTeamName}
                   onChange={(e) => setNewTeamName(e.target.value)}
+                  aria-label="Confirm team name"
                 />
               </div>
 
@@ -2278,6 +2340,7 @@ const TeamDashboard = () => {
                     placeholder="Enter new team name"
                     value={newTeamName}
                     onChange={(e) => setNewTeamName(e.target.value)}
+                    aria-label="Confirm team name"
                   />
                   <button
                     onClick={() => setTeamRebrandConfirmation({...teamRebrandConfirmation, step: 1})}

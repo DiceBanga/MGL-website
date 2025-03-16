@@ -2,12 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { User2, Trophy, GamepadIcon, BarChart2, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { DbPlayer, DbTeamMember } from '../../types/database';
 
 interface UserProfile {
   display_name: string;
   avatar_url: string | null;
   bio: string | null;
   twitter_handle: string | null;
+}
+
+interface TeamWithTeamData {
+  team_id: string;
+  role: string;
+  teams: {
+    name: string;
+    logo_url: string | null;
+  };
 }
 
 const UserProfile = () => {
@@ -33,13 +43,20 @@ const UserProfile = () => {
 
       if (profileError) throw profileError;
 
+      setProfile({
+        display_name: profileData.display_name,
+        avatar_url: profileData.avatar_url,
+        bio: profileData.bio,
+        twitter_handle: profileData.twitter_handle
+      });
+
       // Fetch teams separately
       const { data: teamData, error: teamError } = await supabase
         .from('team_players')
         .select(`
           team_id,
           role,
-          teams:team_id (
+          teams (
             name,
             logo_url
           )
@@ -48,11 +65,16 @@ const UserProfile = () => {
 
       if (teamError) throw teamError;
 
-      setProfile(profileData);
-      setTeams(teamData);
+      setTeams(((teamData || []) as unknown as TeamWithTeamData[]).map(team => ({
+        id: team.team_id,
+        name: team.teams.name,
+        logo_url: team.teams.logo_url,
+        role: team.role
+      })));
+
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching profile:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -114,14 +136,14 @@ const UserProfile = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {teams.map((team) => (
                     <div
-                      key={team.team_id}
+                      key={team.id}
                       className="bg-gray-700/50 rounded-lg p-4 flex items-center space-x-4"
                     >
                       <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
-                        {team.teams.logo_url ? (
+                        {team.logo_url ? (
                           <img
-                            src={team.teams.logo_url}
-                            alt={team.teams.name}
+                            src={team.logo_url}
+                            alt={team.name}
                             className="w-full h-full rounded-full object-cover"
                           />
                         ) : (
@@ -129,7 +151,7 @@ const UserProfile = () => {
                         )}
                       </div>
                       <div>
-                        <p className="text-white font-medium">{team.teams.name}</p>
+                        <p className="text-white font-medium">{team.name}</p>
                         <p className="text-sm text-gray-400">{team.role}</p>
                       </div>
                     </div>

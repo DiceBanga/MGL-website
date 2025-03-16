@@ -48,7 +48,7 @@ function Home() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % headlines.length);
+      setCurrentSlide((prev) => (prev === headlines.length - 1 ? 0 : prev + 1));
     }, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -243,6 +243,7 @@ function Home() {
                   ? 'bg-green-500 scale-125' 
                   : 'bg-white/50 hover:bg-white/70'
               }`}
+              aria-label={`Go to slide ${index + 1}`}
             />
           ))}
         </div>

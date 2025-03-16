@@ -3,12 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { User2, Settings, Trophy, GamepadIcon, BarChart2, Users, Twitter, Twitch, Youtube, Instagram, Disc as Discord, Mail, Phone, Globe, Clock, Plus, Camera, X, Search, Home, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
+import { DbPlayer, DbTeamMember } from '../../types/database';
+
+interface User {
+  id: string;
+  email: string;
+  role: string;
+}
 
 interface AuthState {
-  user: any;
-  isOwner: boolean;
-  isAdmin: boolean;
+  user: User | null;
   loading: boolean;
+  setUser: (user: User | null) => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  createPlayerProfile: (userId: string, email: string) => Promise<void>;
 }
 
 interface UserProfile {
@@ -51,7 +62,7 @@ interface AvailableTeam {
 }
 
 const UserDashboard = () => {
-  const { user, isOwner, isAdmin } = useAuthStore() as AuthState;
+  const { user } = useAuthStore();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>({
@@ -99,8 +110,24 @@ const UserDashboard = () => {
       return;
     }
 
-    setProfile(data);
-    setFormData(data);
+    // Convert DbPlayer to UserProfile
+    const userProfile: UserProfile = {
+      display_name: data.display_name,
+      email: data.email,
+      phone: data.phone || null,
+      timezone: data.timezone || null,
+      language: data.language || 'en',
+      avatar_url: data.avatar_url,
+      bio: data.bio || null,
+      twitter_handle: data.twitter_handle || null,
+      twitch_handle: data.twitch_handle || null,
+      youtube_handle: data.youtube_handle || null,
+      instagram_handle: data.instagram_handle || null,
+      discord_handle: data.discord_handle || null
+    };
+
+    setProfile(userProfile);
+    setFormData(userProfile);
   };
 
   const fetchUserTeams = async () => {
@@ -109,12 +136,13 @@ const UserDashboard = () => {
     const { data, error } = await supabase
       .from('team_players')
       .select(`
+        team_id,
+        role,
         teams (
           id,
           name,
           logo_url
-        ),
-        role
+        )
       `)
       .eq('user_id', user.id);
 
@@ -123,7 +151,18 @@ const UserDashboard = () => {
       return;
     }
 
-    setTeams(data.map(item => ({
+    // Define a more specific type for the team data
+    interface TeamWithTeamData {
+      team_id: string;
+      role: string;
+      teams: {
+        id: string;
+        name: string;
+        logo_url: string | null;
+      };
+    }
+
+    setTeams(((data || []) as unknown as TeamWithTeamData[]).map(item => ({
       id: item.teams.id,
       name: item.teams.name,
       logo_url: item.teams.logo_url,
@@ -195,7 +234,7 @@ const UserDashboard = () => {
         .update({
           avatar_url: publicUrl,
           avatar_upload_path: filePath
-        })
+        } as Partial<DbPlayer>)
         .eq('user_id', user.id);
 
       if (updateError) throw updateError;
@@ -281,7 +320,7 @@ const UserDashboard = () => {
     
     const { error } = await supabase
       .from('players')
-      .update(formData)
+      .update(formData as Partial<DbPlayer>)
       .eq('user_id', user?.id);
 
     if (error) {
@@ -368,18 +407,7 @@ const UserDashboard = () => {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-white">User Dashboard</h1>
           <div className="flex space-x-4">
-            {isOwner && (
-              <Link to="/owner" className="bg-purple-700 text-white px-4 py-2 rounded-md hover:bg-purple-600 flex items-center">
-                <Crown className="w-5 h-5 mr-2" />
-                Owner Panel
-              </Link>
-            )}
-            {isAdmin && (
-              <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
-                <Shield className="w-5 h-5 mr-2" />
-                Admin Panel
-              </Link>
-            )}
+            {/* Add owner and admin links */}
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -416,6 +444,7 @@ const UserDashboard = () => {
                     accept="image/*"
                     className="hidden"
                     onChange={handleAvatarChange}
+                    aria-label="Upload avatar"
                   />
                   <div>
                     <h2 className="text-2xl font-bold text-white">{profile?.display_name}</h2>
@@ -423,18 +452,7 @@ const UserDashboard = () => {
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  {isOwner && (
-                    <Link to="/owner" className="bg-purple-700 text-white px-4 py-2 rounded-md hover:bg-purple-600 flex items-center">
-                      <Crown className="w-5 h-5 mr-2" />
-                      Owner Dashboard
-                    </Link>
-                  )}
-                  {isAdmin && (
-                    <Link to="/admin" className="bg-green-700 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center">
-                      <Shield className="w-5 h-5 mr-2" />
-                      Admin Panel
-                    </Link>
-                  )}
+                  {/* Add owner and admin links */}
                   <button
                     onClick={() => setIsEditing(!isEditing)}
                     className="text-green-500 hover:text-green-400"
@@ -457,6 +475,7 @@ const UserDashboard = () => {
                       value={formData.display_name || ''}
                       onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      aria-label="Display Name"
                     />
                   </div>
 
@@ -470,6 +489,7 @@ const UserDashboard = () => {
                       onChange={handleInputChange}
                       rows={3}
                       className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      aria-label="Bio"
                     />
                   </div>
 
@@ -484,6 +504,7 @@ const UserDashboard = () => {
                         value={formData.twitter_handle || ''}
                         onChange={handleInputChange}
                         className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        aria-label="Twitter Handle"
                       />
                     </div>
 
@@ -497,6 +518,7 @@ const UserDashboard = () => {
                         value={formData.twitch_handle || ''}
                         onChange={handleInputChange}
                         className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        aria-label="Twitch Handle"
                       />
                     </div>
 
@@ -510,6 +532,7 @@ const UserDashboard = () => {
                         value={formData.youtube_handle || ''}
                         onChange={handleInputChange}
                         className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        aria-label="YouTube Handle"
                       />
                     </div>
 
@@ -523,6 +546,7 @@ const UserDashboard = () => {
                         value={formData.instagram_handle || ''}
                         onChange={handleInputChange}
                         className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                        aria-label="Instagram Handle"
                       />
                     </div>
                   </div>
@@ -649,6 +673,7 @@ const UserDashboard = () => {
                         onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
                         className="w-full rounded-md border-gray-700 bg-gray-600 text-white"
                         required
+                        aria-label="Team Name"
                       />
                     </div>
                     <div>
@@ -660,6 +685,7 @@ const UserDashboard = () => {
                         onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
                         className="w-full rounded-md border-gray-700 bg-gray-600 text-white"
                         rows={3}
+                        aria-label="Team Description"
                       />
                     </div>
                     <div className="flex justify-end space-x-3">
