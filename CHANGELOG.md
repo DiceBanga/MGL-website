@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2024-03-20
+
+### Team Dashboard Enhancements
+- Improved Team Transfer process with two-step confirmation and payment integration
+- Added payment completion handling to execute team ownership transfer only after successful payment
+- Implemented standardized reference ID format for all payment types
+- Added Front Office section with dedicated management features
+- Reorganized dashboard layout with grid system for better usability
+- Enhanced player search functionality for team transfers
+
+### Payment System
+- Implemented consistent payment flow across all team management actions
+- Added confirmation modals for all payment-related actions
+- Created standardized payment data structure with proper reference IDs
+- Added payment status tracking and request management
+- Improved error handling for payment failures
+
+### User Experience
+- Added two-step confirmation process for all team management actions
+- Enhanced visual design with consistent styling across modals
+- Improved feedback for payment status and action results
+- Added detailed confirmation screens with action summaries
+- Implemented player search functionality for team management
+
+### Database
+- Added team_change_requests table to track pending and completed changes
+- Enhanced request tracking with metadata and reference IDs
+- Added status tracking for payment-dependent operations
+
 ## [1.5.0] - 2024-03-14
 
 ### Authentication & Authorization
