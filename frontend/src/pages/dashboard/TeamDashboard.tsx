@@ -172,6 +172,22 @@ const TeamDashboard = () => {
   
   const logoInputRef = React.useRef<HTMLInputElement>(null);
 
+  // State for confirmation modals
+  const [rosterChangeConfirmation, setRosterChangeConfirmation] = useState<{show: boolean, step: 1 | 2}>({
+    show: false,
+    step: 1
+  });
+  
+  const [onlineIdChangeConfirmation, setOnlineIdChangeConfirmation] = useState<{show: boolean, step: 1 | 2}>({
+    show: false,
+    step: 1
+  });
+  
+  const [teamRebrandConfirmation, setTeamRebrandConfirmation] = useState<{show: boolean, step: 1 | 2}>({
+    show: false,
+    step: 1
+  });
+
   useEffect(() => {
     if (user) {
       fetchTeamData();
@@ -729,7 +745,13 @@ const TeamDashboard = () => {
 
   const handleRosterChangeSubmit = async () => {
     if (!teamId || !selectedRosterEvent || selectedRosterPlayers.length === 0) return;
-
+    
+    // Show confirmation modal instead of proceeding directly
+    setRosterChangeConfirmation({show: true, step: 1});
+    setShowRosterChangeModal(false);
+  };
+  
+  const processRosterChangePayment = async () => {
     try {
       // Get item price
       const { data: itemData, error: itemError } = await supabase
@@ -739,6 +761,21 @@ const TeamDashboard = () => {
         .single();
 
       if (itemError) throw new Error('Error fetching item price: ' + itemError.message);
+      
+      // Create reference ID with the proper format
+      const date = new Date();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${month}${day}${year}`;
+      
+      // Get first 8 chars of IDs and remove hyphens
+      const teamIdPart = teamId?.replace(/-/g, '').slice(0, 8) || '';
+      const captainIdPart = user?.id?.replace(/-/g, '').slice(0, 8) || '';
+      const eventIdPart = selectedRosterEvent.replace(/-/g, '').slice(0, 8) || '';
+      
+      // Construct reference ID according to the format: date-itemId-teamId-captainId-eventId
+      const referenceId = `${dateStr}-1005-${teamIdPart}-${captainIdPart}-${eventIdPart}`;
       
       // Create change request
       const { data: requestData, error: requestError } = await supabase
@@ -755,7 +792,8 @@ const TeamDashboard = () => {
             players: selectedRosterPlayers.map(p => ({
               id: p.id,
               display_name: p.display_name
-            }))
+            })),
+            referenceId: referenceId
           }
         })
         .select()
@@ -772,18 +810,33 @@ const TeamDashboard = () => {
             description: `Roster change for ${selectedRosterEvent.includes('tournament') ? 'Tournament' : 'League'}`,
             amount: itemData.current_price,
             item_id: '1005',
-            request_id: requestData.id
+            request_id: requestData.id,
+            teamId: teamId,
+            captainId: user?.id,
+            eventId: selectedRosterEvent.replace(/^(tournament_|league_)/, ''),
+            referenceId: referenceId,
+            type: 'roster_change'
           }
         }
       });
+      
+      // Close the confirmation modal
+      setRosterChangeConfirmation({show: false, step: 1});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setRosterChangeConfirmation({show: false, step: 1});
     }
   };
 
   const handleOnlineIdChangeSubmit = async () => {
     if (!teamId || !selectedOnlineIdEvent || !selectedPlayerId || !newOnlineId) return;
-
+    
+    // Show confirmation modal instead of proceeding directly
+    setOnlineIdChangeConfirmation({show: true, step: 1});
+    setShowOnlineIdChangeModal(false);
+  };
+  
+  const processOnlineIdChangePayment = async () => {
     try {
       // Get item price
       const { data: itemData, error: itemError } = await supabase
@@ -793,6 +846,21 @@ const TeamDashboard = () => {
         .single();
 
       if (itemError) throw new Error('Error fetching item price: ' + itemError.message);
+      
+      // Create reference ID with the proper format
+      const date = new Date();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${month}${day}${year}`;
+      
+      // Get first 8 chars of IDs and remove hyphens
+      const teamIdPart = teamId?.replace(/-/g, '').slice(0, 8) || '';
+      const captainIdPart = user?.id?.replace(/-/g, '').slice(0, 8) || '';
+      const playerIdPart = selectedPlayerId.replace(/-/g, '').slice(0, 8) || '';
+      
+      // Construct reference ID according to the format: date-itemId-teamId-captainId-playerId
+      const referenceId = `${dateStr}-1007-${teamIdPart}-${captainIdPart}-${playerIdPart}`;
       
       // Create change request
       const { data: requestData, error: requestError } = await supabase
@@ -807,7 +875,10 @@ const TeamDashboard = () => {
           old_value: members.find(m => m.id === selectedPlayerId)?.online_id || '',
           new_value: newOnlineId,
           item_id: '1007',
-          status: 'pending'
+          status: 'pending',
+          metadata: {
+            referenceId: referenceId
+          }
         })
         .select()
         .single();
@@ -823,12 +894,21 @@ const TeamDashboard = () => {
             description: `Change online ID for ${members.find(m => m.id === selectedPlayerId)?.display_name}`,
             amount: itemData.current_price,
             item_id: '1007',
-            request_id: requestData.id
+            request_id: requestData.id,
+            teamId: teamId,
+            captainId: user?.id,
+            playerId: selectedPlayerId,
+            referenceId: referenceId,
+            type: 'online_id_change'
           }
         }
       });
+      
+      // Close the confirmation modal
+      setOnlineIdChangeConfirmation({show: false, step: 1});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setOnlineIdChangeConfirmation({show: false, step: 1});
     }
   };
 
@@ -850,7 +930,13 @@ const TeamDashboard = () => {
 
   const handleTeamRebrandSubmit = async () => {
     if (!teamId || !newTeamName || !newTeamTag || newTeamTag.length !== 3) return;
-
+    
+    // Show confirmation modal instead of proceeding directly
+    setTeamRebrandConfirmation({show: true, step: 1});
+    setShowTeamRebrandModal(false);
+  };
+  
+  const processTeamRebrandPayment = async () => {
     try {
       // Get item price
       const { data: itemData, error: itemError } = await supabase
@@ -860,6 +946,20 @@ const TeamDashboard = () => {
         .single();
 
       if (itemError) throw new Error('Error fetching item price: ' + itemError.message);
+      
+      // Create reference ID with the proper format
+      const date = new Date();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${month}${day}${year}`;
+      
+      // Get first 8 chars of IDs and remove hyphens
+      const teamIdPart = teamId?.replace(/-/g, '').slice(0, 8) || '';
+      const captainIdPart = user?.id?.replace(/-/g, '').slice(0, 8) || '';
+      
+      // Construct reference ID according to the format: date-itemId-teamId-captainId
+      const referenceId = `${dateStr}-1006-${teamIdPart}-${captainIdPart}`;
       
       // Upload logo if provided
       let logoUrl = team?.logo_url;
@@ -898,7 +998,10 @@ const TeamDashboard = () => {
             description: newTeamDescription
           }),
           item_id: '1006',
-          status: 'pending'
+          status: 'pending',
+          metadata: {
+            referenceId: referenceId
+          }
         })
         .select()
         .single();
@@ -914,12 +1017,20 @@ const TeamDashboard = () => {
             description: `Rebrand team from "${team?.name}" to "${newTeamName}"`,
             amount: itemData.current_price,
             item_id: '1006',
-            request_id: requestData.id
+            request_id: requestData.id,
+            teamId: teamId,
+            captainId: user?.id,
+            referenceId: referenceId,
+            type: 'team_rebrand'
           }
         }
       });
+      
+      // Close the confirmation modal
+      setTeamRebrandConfirmation({show: false, step: 1});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setTeamRebrandConfirmation({show: false, step: 1});
     }
   };
 
@@ -1053,386 +1164,416 @@ const TeamDashboard = () => {
   }
 
   return (
-    <div className="bg-gray-900 min-h-screen p-8">
-      {error && (
-        <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-2 rounded-md mb-4">
-          {error}
-        </div>
-      )}
-      {successMessage && (
-        <div className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-2 rounded-md mb-4">
-          {successMessage}
-        </div>
-      )}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Team Info Section */}
-          <div className="lg:col-span-2">
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Team Information</h2>
-                <div className="flex space-x-4">
-                  <button
-                    onClick={() => setIsEditing(!isEditing)}
-                    className="text-green-500 hover:text-green-400"
-                  >
-                    <Settings className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirmation({ type: 'disband', show: true, step: 1 })}
-                    className="text-red-500 hover:text-red-400"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {isEditing ? (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Team Name
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name || ''}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Website
-                    </label>
-                    <input
-                      type="url"
-                      name="website"
-                      value={formData.website || ''}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email || ''}
-                      onChange={handleInputChange}
-                      className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
-                    />
-                  </div>
-
-                  <div className="flex justify-end space-x-4">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-green-500/10 p-3 rounded-lg">
-                      <Users className="w-6 h-6 text-green-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400">Team Name</p>
-                      <p className="text-white">{team?.name}</p>
-                    </div>
-                  </div>
-
-                  {team?.website && (
-                    <div className="flex items-center space-x-4">
-                      <div className="bg-green-500/10 p-3 rounded-lg">
-                        <Globe className="w-6 h-6 text-green-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Website</p>
-                        <a
-                          href={team.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-green-500 hover:text-green-400"
-                        >
-                          {team.website}
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {team?.email && (
-                    <div className="flex items-center space-x-4">
-                      <div className="bg-green-500/10 p-3 rounded-lg">
-                        <Mail className="w-6 h-6 text-green-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Email</p>
-                        <p className="text-white">{team.email}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Grid for Free Agency and Front Office side by side */}
-            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Free Agency Section */}
+    <div className="bg-gray-900 min-h-screen p-8 relative">
+      {/* Background image and overlay */}
+      <div className="absolute inset-0 z-0">
+        <img 
+          src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&q=80&w=2940" 
+          alt="Background" 
+          className="w-full h-full object-cover opacity-20"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-gray-900/80 to-gray-900/95"></div>
+      </div>
+      
+      {/* Content */}
+      <div className="relative z-10">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-2 rounded-md mb-4">
+            {error}
+          </div>
+        )}
+        {successMessage && (
+          <div className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-2 rounded-md mb-4">
+            {successMessage}
+          </div>
+        )}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Team Info Section */}
+            <div className="lg:col-span-2">
               <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold text-white">Free Agency</h2>
-                  <button
-                    onClick={() => setShowSignPlayers(!showSignPlayers)}
-                    className="text-green-500 hover:text-green-400 flex items-center space-x-2"
-                  >
-                    <Plus className="w-5 h-5" />
-                    <span>Sign Players</span>
-                  </button>
+                  <h2 className="text-2xl font-bold text-white">Team Information</h2>
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => setIsEditing(!isEditing)}
+                      className="text-green-500 hover:text-green-400"
+                      aria-label="Edit team information"
+                      title="Edit team information"
+                    >
+                      <Settings className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmation({ type: 'disband', show: true, step: 1 })}
+                      className="text-red-500 hover:text-red-400"
+                      aria-label="Disband team"
+                      title="Disband team"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
-                {showSignPlayers && (
-                  <div className="mb-6 bg-gray-700/50 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-white mb-4">Pending Join Requests</h3>
-                    {joinRequests.length > 0 ? (
-                      <div className="space-y-4">
-                        {joinRequests.map((request) => (
-                          <div
-                            key={request.id}
-                            className="flex items-center justify-between bg-gray-600/50 p-4 rounded-lg"
-                          >
-                            <div className="flex items-center space-x-4">
-                              <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
-                                {request.avatar_url ? (
-                                  <img
-                                    src={request.avatar_url}
-                                    alt={request.display_name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <User2 className="w-5 h-5 text-green-500" />
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-white">{request.display_name}</p>
-                                <p className="text-sm text-gray-400">
-                                  Requested {new Date(request.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() => handleApproveJoinRequest(request.id, request.user_id)}
-                                className="px-3 py-1 bg-green-700 text-white rounded-md hover:bg-green-600"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleRejectJoinRequest(request.id)}
-                                className="px-3 py-1 bg-red-700 text-white rounded-md hover:bg-red-600"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                {isEditing ? (
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Team Name
+                      </label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={formData.name || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Website
+                      </label>
+                      <input
+                        type="url"
+                        name="website"
+                        value={formData.website || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email || ''}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-700 bg-gray-700 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+
+                    <div className="flex justify-end space-x-4">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        className="px-4 py-2 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-green-500/10 p-3 rounded-lg">
+                        <Users className="w-6 h-6 text-green-500" />
                       </div>
-                    ) : (
-                      <p className="text-gray-400">No pending join requests</p>
+                      <div>
+                        <p className="text-sm text-gray-400">Team Name</p>
+                        <p className="text-white">{team?.name}</p>
+                      </div>
+                    </div>
+
+                    {team?.website && (
+                      <div className="flex items-center space-x-4">
+                        <div className="bg-green-500/10 p-3 rounded-lg">
+                          <Globe className="w-6 h-6 text-green-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-400">Website</p>
+                          <a
+                            href={team.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-green-500 hover:text-green-400"
+                          >
+                            {team.website}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {team?.email && (
+                      <div className="flex items-center space-x-4">
+                        <div className="bg-green-500/10 p-3 rounded-lg">
+                          <Mail className="w-6 h-6 text-green-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-400">Email</p>
+                          <p className="text-white">{team.email}</p>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
-
-                <div className="space-y-4">
-                  {members.map((member) => (
-                    <div
-                      key={member.id}
-                      className="flex items-center justify-between bg-gray-700/50 p-4 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
-                          {member.avatar_url ? (
-                            <img
-                              src={member.avatar_url}
-                              alt={member.display_name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <User2 className="w-5 h-5 text-green-500" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-white">{member.display_name}</p>
-                          <p className="text-sm text-gray-400">
-                            {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                            {member.jersey_number && ` • #${member.jersey_number}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-4">
-                        {member.role !== 'captain' && (
-                          <button
-                            onClick={() => setDeleteConfirmation({
-                              type: 'transfer',
-                              show: true,
-                              step: 1,
-                              targetId: member.id
-                            })}
-                            className="text-green-500 hover:text-green-400"
-                          >
-                            Make Captain
-                          </button>
-                        )}
-                        {member.can_be_deleted && (
-                          <button
-                            onClick={() => handleRemoveMember(member.id)}
-                            className="text-red-500 hover:text-red-400"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
 
-              {/* Front Office Section */}
-              {isCaptain && (
+              {/* Grid for Free Agency and Front Office side by side */}
+              <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Free Agency Section */}
                 <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
-                  <h2 className="text-xl font-bold text-white mb-6">Front Office</h2>
-                  <div className="grid grid-cols-1 gap-4">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-white">Free Agency</h2>
                     <button
-                      onClick={() => setShowRosterChangeModal(true)}
-                      className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
+                      onClick={() => setShowSignPlayers(!showSignPlayers)}
+                      className="text-green-500 hover:text-green-400 flex items-center space-x-2"
                     >
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-green-500/10 p-2 rounded-lg">
-                          <Users className="w-5 h-5 text-green-500" />
-                        </div>
-                        <span className="text-white">Roster Change</span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-green-500" />
-                    </button>
-                    
-                    <button
-                      onClick={() => setShowOnlineIdChangeModal(true)}
-                      className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-green-500/10 p-2 rounded-lg">
-                          <UserCog className="w-5 h-5 text-green-500" />
-                        </div>
-                        <span className="text-white">Online ID Change</span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-green-500" />
-                    </button>
-                    
-                    <button
-                      onClick={() => setShowTeamRebrandModal(true)}
-                      className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-green-500/10 p-2 rounded-lg">
-                          <Paintbrush className="w-5 h-5 text-green-500" />
-                        </div>
-                        <span className="text-white">Team Rebrand</span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-green-500" />
-                    </button>
-                    
-                    <button
-                      onClick={() => setDeleteConfirmation({ type: 'transfer', show: true, step: 1 })}
-                      className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-green-500/10 p-2 rounded-lg">
-                          <UserPlus className="w-5 h-5 text-green-500" />
-                        </div>
-                        <span className="text-white">Transfer Ownership</span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-green-500" />
+                      <Plus className="w-5 h-5" />
+                      <span>Sign Players</span>
                     </button>
                   </div>
+
+                  {showSignPlayers && (
+                    <div className="mb-6 bg-gray-700/50 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold text-white mb-4">Pending Join Requests</h3>
+                      {joinRequests.length > 0 ? (
+                        <div className="space-y-4">
+                          {joinRequests.map((request) => (
+                            <div
+                              key={request.id}
+                              className="flex items-center justify-between bg-gray-600/50 p-4 rounded-lg"
+                            >
+                              <div className="flex items-center space-x-4">
+                                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                                  {request.avatar_url ? (
+                                    <img
+                                      src={request.avatar_url}
+                                      alt={request.display_name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <User2 className="w-5 h-5 text-green-500" />
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-white">{request.display_name}</p>
+                                  <p className="text-sm text-gray-400">
+                                    Requested {new Date(request.created_at).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => handleApproveJoinRequest(request.id, request.user_id)}
+                                  className="px-3 py-1 bg-green-700 text-white rounded-md hover:bg-green-600"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRejectJoinRequest(request.id)}
+                                  className="px-3 py-1 bg-red-700 text-white rounded-md hover:bg-red-600"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-400">No pending join requests</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    {members.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between bg-gray-700/50 p-4 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center overflow-hidden">
+                            {member.avatar_url ? (
+                              <img
+                                src={member.avatar_url}
+                                alt={member.display_name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <User2 className="w-5 h-5 text-green-500" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-white">{member.display_name}</p>
+                            <p className="text-sm text-gray-400">
+                              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                              {member.jersey_number && ` • #${member.jersey_number}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          {member.can_be_deleted && (
+                            <button
+                              onClick={() => handleRemoveMember(member.id)}
+                              className="text-red-500 hover:text-red-400"
+                              aria-label={`Remove ${member.display_name}`}
+                              title={`Remove ${member.display_name}`}
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
+
+                {/* Front Office Section */}
+                {isCaptain && (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+                    <h2 className="text-xl font-bold text-white mb-6">Front Office</h2>
+                    <div className="grid grid-cols-1 gap-4">
+                      <button
+                        onClick={() => setShowRosterChangeModal(true)}
+                        className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <Users className="w-5 h-5 text-green-500" />
+                          </div>
+                          <span className="text-white">Roster Change</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-green-500" />
+                      </button>
+                      
+                      <button
+                        onClick={() => setShowOnlineIdChangeModal(true)}
+                        className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <UserCog className="w-5 h-5 text-green-500" />
+                          </div>
+                          <span className="text-white">Online ID Change</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-green-500" />
+                      </button>
+                      
+                      <button
+                        onClick={() => setShowTeamRebrandModal(true)}
+                        className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <Paintbrush className="w-5 h-5 text-green-500" />
+                          </div>
+                          <span className="text-white">Team Rebrand</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-green-500" />
+                      </button>
+                      
+                      <button
+                        onClick={() => setDeleteConfirmation({ type: 'transfer', show: true, step: 1 })}
+                        className="flex items-center justify-between bg-gray-700 hover:bg-gray-600 transition-colors p-4 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-green-500/10 p-2 rounded-lg">
+                            <UserPlus className="w-5 h-5 text-green-500" />
+                          </div>
+                          <span className="text-white">Transfer Ownership</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-green-500" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Team Stats Section */}
-          <div>
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
-              <h2 className="text-xl font-bold text-white mb-6">Team Stats</h2>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg">
-                      <Trophy className="w-5 h-5 text-green-500" />
+            {/* Team Stats Section */}
+            <div>
+              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+                <h2 className="text-xl font-bold text-white mb-6">Team Stats</h2>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-green-500/10 p-2 rounded-lg">
+                        <Trophy className="w-5 h-5 text-green-500" />
+                      </div>
+                      <span className="text-gray-300">Win Rate</span>
                     </div>
-                    <span className="text-gray-300">Win Rate</span>
+                    <span className="text-white font-semibold">75%</span>
                   </div>
-                  <span className="text-white font-semibold">75%</span>
-                </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg">
-                      <Calendar className="w-5 h-5 text-green-500" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-green-500/10 p-2 rounded-lg">
+                        <Calendar className="w-5 h-5 text-green-500" />
+                      </div>
+                      <span className="text-gray-300">Games Played</span>
                     </div>
-                    <span className="text-gray-300">Games Played</span>
+                    <span className="text-white font-semibold">32</span>
                   </div>
-                  <span className="text-white font-semibold">32</span>
-                </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg">
-                      <Users className="w-5 h-5 text-green-500" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-green-500/10 p-2 rounded-lg">
+                        <Users className="w-5 h-5 text-green-500" />
+                      </div>
+                      <span className="text-gray-300">Active Members</span>
                     </div>
-                    <span className="text-gray-300">Active Members</span>
+                    <span className="text-white font-semibold">{members.length}</span>
                   </div>
-                  <span className="text-white font-semibold">{members.length}</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Delete/Transfer Confirmation Modal */}
-      {deleteConfirmation.show && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            {deleteConfirmation.type === 'disband' ? (
-              <>
-                {deleteConfirmation.step === 1 ? (
-                  <div className="text-center">
-                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-white mb-2">Disband Team?</h3>
-                    <p className="text-gray-300 mb-6">
-                      Are you sure you want to disband this team? This action cannot be undone.
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <button
-                        onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
-                        className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-600"
-                      >
-                        Yes, Disband Team
-                      </button>
+        {/* Delete/Transfer Confirmation Modal */}
+        {deleteConfirmation.show && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              {deleteConfirmation.type === 'disband' ? (
+                <>
+                  {deleteConfirmation.step === 1 ? (
+                    <div className="text-center">
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-white mb-2">Disband Team?</h3>
+                      <p className="text-gray-300 mb-6">
+                        Are you sure you want to disband this team? This action cannot be undone.
+                      </p>
+                      <div className="flex justify-center space-x-4">
+                        <button
+                          onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
+                          className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-600"
+                        >
+                          Yes, Disband Team
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
+                          className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
+                      <p className="text-gray-300 mb-6">
+                        Type "DISBAND" to confirm you want to permanently delete this team.
+                      </p>
+                      <input
+                        type="text"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                        placeholder="Type DISBAND"
+                        onChange={(e) => {
+                          if (e.target.value === 'DISBAND') {
+                            handleDisbandTeam();
+                          }
+                        }}
+                      />
                       <button
                         onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
                         className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
@@ -1440,48 +1581,101 @@ const TeamDashboard = () => {
                         Cancel
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
-                    <p className="text-gray-300 mb-6">
-                      Type "DISBAND" to confirm you want to permanently delete this team.
-                    </p>
-                    <input
-                      type="text"
-                      className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
-                      placeholder="Type DISBAND"
-                      onChange={(e) => {
-                        if (e.target.value === 'DISBAND') {
-                          handleDisbandTeam();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => setDeleteConfirmation({ type: 'disband', show: false, step: 1 })}
-                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {deleteConfirmation.step === 1 ? (
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-white mb-2">Transfer Team Ownership</h3>
-                    <p className="text-gray-300 mb-6">
-                      You are requesting to relinquish control of <span className="font-bold text-red-500">{team?.name}</span> to <span className="font-bold text-green-500">{members.find(m => m.id === deleteConfirmation.targetId)?.display_name}</span> for <span className="font-bold text-white">${teamTransferPrice} USD</span>.
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <button
-                        onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
-                        className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
-                      >
-                        Continue
-                      </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {deleteConfirmation.step === 1 ? (
+                    <div>
+                      <h3 className="text-xl font-bold text-white mb-4">Transfer Team Ownership</h3>
+                      
+                      <div className="mb-4">
+                        <label className="block text-gray-300 mb-2">
+                          Select New Team Captain
+                        </label>
+                        <div className="mb-2">
+                          <input
+                            type="text"
+                            className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                            placeholder="Search players..."
+                            onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                          />
+                        </div>
+                        
+                        <div className="max-h-40 overflow-y-auto bg-gray-700 rounded-md mb-4">
+                          {members
+                            .filter(member => 
+                              member.role !== 'captain' && 
+                              member.display_name.toLowerCase().includes(playerSearchQuery.toLowerCase())
+                            )
+                            .map(member => (
+                              <div 
+                                key={member.id}
+                                className={`flex items-center p-2 hover:bg-gray-600 cursor-pointer ${
+                                  deleteConfirmation.targetId === member.id ? 'bg-gray-600' : ''
+                                }`}
+                                onClick={() => setDeleteConfirmation({
+                                  ...deleteConfirmation,
+                                  targetId: member.id
+                                })}
+                              >
+                                <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden mr-2">
+                                  {member.avatar_url ? (
+                                    <img 
+                                      src={member.avatar_url} 
+                                      alt={member.display_name}
+                                      className="w-full h-full object-cover" 
+                                    />
+                                  ) : (
+                                    <User2 className="w-8 h-8 p-1 text-green-500" />
+                                  )}
+                                </div>
+                                <span className="text-white">{member.display_name}</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                      
+                      {deleteConfirmation.targetId && (
+                        <div className="text-center mb-6">
+                          <p className="text-gray-300 mb-2">
+                            You are requesting to relinquish control of <span className="font-bold text-red-500">{team?.name}</span> to <span className="font-bold text-green-500">{members.find(m => m.id === deleteConfirmation.targetId)?.display_name}</span> for <span className="font-bold text-white">${teamTransferPrice} USD</span>.
+                          </p>
+                        </div>
+                      )}
+                      
+                      <div className="flex justify-center space-x-4">
+                        <button
+                          onClick={() => setDeleteConfirmation({ ...deleteConfirmation, step: 2 })}
+                          disabled={!deleteConfirmation.targetId}
+                          className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                        >
+                          Continue
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
+                          className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
+                      <p className="text-gray-300 mb-6">
+                        Type "<span className="font-bold text-white">{team?.name}</span>" to confirm the ownership transfer.
+                      </p>
+                      <input
+                        type="text"
+                        className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                        placeholder={`Type ${team?.name}`}
+                        onChange={(e) => {
+                          if (e.target.value === team?.name && deleteConfirmation.targetId) {
+                            handleTransferOwnership(deleteConfirmation.targetId);
+                          }
+                        }}
+                      />
                       <button
                         onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
                         className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
@@ -1489,88 +1683,94 @@ const TeamDashboard = () => {
                         Cancel
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-white mb-2">Final Confirmation</h3>
-                    <p className="text-gray-300 mb-6">
-                      Type "<span className="font-bold text-white">{team?.name}</span>" to confirm the ownership transfer.
-                    </p>
-                    <input
-                      type="text"
-                      className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
-                      placeholder={`Type ${team?.name}`}
-                      onChange={(e) => {
-                        if (e.target.value === team?.name && deleteConfirmation.targetId) {
-                          handleTransferOwnership(deleteConfirmation.targetId);
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => setDeleteConfirmation({ type: 'transfer', show: false, step: 1 })}
-                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Roster Change Modal */}
-      {showRosterChangeModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold text-white mb-4">Roster Change Request</h3>
-            
-            <div className="mb-4">
-              <label htmlFor="rosterEventSelect" className="block text-gray-300 mb-2">
-                Select Tournament/League
-              </label>
-              <select
-                id="rosterEventSelect"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                value={selectedRosterEvent || ''}
-                onChange={(e) => setSelectedRosterEvent(e.target.value)}
-              >
-                <option value="">Select Tournament/League</option>
-                {availableEvents.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.name} ({event.type})
-                  </option>
-                ))}
-              </select>
+                  )}
+                </>
+              )}
             </div>
+          </div>
+        )}
 
-            <div className="mb-4">
-              <label htmlFor="playerSearch" className="block text-gray-300 mb-2">
-                Search Players
-              </label>
-              <input
-                id="playerSearch"
-                type="text"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white mb-2"
-                placeholder="Search by name..."
-                value={playerSearchQuery}
-                onChange={(e) => setPlayerSearchQuery(e.target.value)}
-              />
+        {/* Roster Change Modal */}
+        {showRosterChangeModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold text-white mb-4">Roster Change Request</h3>
               
-              <div className="max-h-40 overflow-y-auto bg-gray-700 rounded-md">
-                {availablePlayers
-                  .filter(player => 
-                    player.display_name.toLowerCase().includes(playerSearchQuery.toLowerCase())
-                  )
-                  .map(player => (
+              <div className="mb-4">
+                <label htmlFor="rosterEventSelect" className="block text-gray-300 mb-2">
+                  Select Tournament/League
+                </label>
+                <select
+                  id="rosterEventSelect"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  value={selectedRosterEvent || ''}
+                  onChange={(e) => setSelectedRosterEvent(e.target.value)}
+                >
+                  <option value="">Select Tournament/League</option>
+                  {availableEvents.map((event) => (
+                    <option key={event.id} value={event.id}>
+                      {event.name} ({event.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="playerSearch" className="block text-gray-300 mb-2">
+                  Search Players
+                </label>
+                <input
+                  id="playerSearch"
+                  type="text"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white mb-2"
+                  placeholder="Search by name..."
+                  value={playerSearchQuery}
+                  onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                />
+                
+                <div className="max-h-40 overflow-y-auto bg-gray-700 rounded-md">
+                  {availablePlayers
+                    .filter(player => 
+                      player.display_name.toLowerCase().includes(playerSearchQuery.toLowerCase())
+                    )
+                    .map(player => (
+                      <div 
+                        key={player.id}
+                        className="flex items-center justify-between p-2 hover:bg-gray-600 cursor-pointer"
+                        onClick={() => handleRosterPlayerSelect(player)}
+                      >
+                        <div className="flex items-center">
+                          <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden mr-2">
+                            {player.avatar_url ? (
+                              <img 
+                                src={player.avatar_url} 
+                                alt={player.display_name}
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <User2 className="w-8 h-8 p-1 text-green-500" />
+                            )}
+                          </div>
+                          <span className="text-white">{player.display_name}</span>
+                        </div>
+                        {selectedRosterPlayers.some(p => p.id === player.id) && (
+                          <Check className="w-5 h-5 text-green-500" />
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <h4 className="text-white mb-2">Selected Players:</h4>
+                <div className="space-y-2">
+                  {selectedRosterPlayers.map(player => (
                     <div 
                       key={player.id}
-                      className="flex items-center justify-between p-2 hover:bg-gray-600 cursor-pointer"
-                      onClick={() => handleRosterPlayerSelect(player)}
+                      className="flex items-center justify-between bg-gray-700 p-2 rounded-md"
                     >
                       <div className="flex items-center">
-                        <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden mr-2">
+                        <div className="w-6 h-6 rounded-full bg-gray-600 overflow-hidden mr-2">
                           {player.avatar_url ? (
                             <img 
                               src={player.avatar_url} 
@@ -1578,273 +1778,459 @@ const TeamDashboard = () => {
                               className="w-full h-full object-cover" 
                             />
                           ) : (
-                            <User2 className="w-8 h-8 p-1 text-green-500" />
+                            <User2 className="w-6 h-6 p-1 text-green-500" />
                           )}
                         </div>
                         <span className="text-white">{player.display_name}</span>
                       </div>
-                      {selectedRosterPlayers.some(p => p.id === player.id) && (
-                        <Check className="w-5 h-5 text-green-500" />
-                      )}
+                      <button
+                        aria-label={`Remove ${player.display_name}`}
+                        onClick={() => handleRemoveRosterPlayer(player.id)}
+                        className="text-red-500 hover:text-red-400"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <h4 className="text-white mb-2">Selected Players:</h4>
-              <div className="space-y-2">
-                {selectedRosterPlayers.map(player => (
-                  <div 
-                    key={player.id}
-                    className="flex items-center justify-between bg-gray-700 p-2 rounded-md"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-6 h-6 rounded-full bg-gray-600 overflow-hidden mr-2">
-                        {player.avatar_url ? (
-                          <img 
-                            src={player.avatar_url} 
-                            alt={player.display_name}
-                            className="w-full h-full object-cover" 
-                          />
-                        ) : (
-                          <User2 className="w-6 h-6 p-1 text-green-500" />
-                        )}
-                      </div>
-                      <span className="text-white">{player.display_name}</span>
-                    </div>
-                    <button
-                      aria-label={`Remove ${player.display_name}`}
-                      onClick={() => handleRemoveRosterPlayer(player.id)}
-                      className="text-red-500 hover:text-red-400"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="text-center mb-4">
-              <p className="text-gray-300">Total: <span className="text-white font-bold">${rosterChangePrice}</span></p>
-            </div>
-
-            <div className="flex justify-between">
-              <button
-                onClick={() => setShowRosterChangeModal(false)}
-                className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRosterChangeSubmit}
-                disabled={!selectedRosterEvent || selectedRosterPlayers.length === 0}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
-              >
-                Submit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Online ID Change Modal */}
-      {showOnlineIdChangeModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold text-white mb-4">Online ID Change Request</h3>
-            
-            <div className="mb-4">
-              <label htmlFor="onlineIdEventSelect" className="block text-gray-300 mb-2">
-                Select Tournament/League
-              </label>
-              <select
-                id="onlineIdEventSelect"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                value={selectedOnlineIdEvent || ''}
-                onChange={(e) => setSelectedOnlineIdEvent(e.target.value)}
-              >
-                <option value="">Select Tournament/League</option>
-                {availableEvents.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.name} ({event.type})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="playerSelect" className="block text-gray-300 mb-2">
-                Select Player
-              </label>
-              <select
-                id="playerSelect"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                value={selectedPlayerId || ''}
-                onChange={(e) => setSelectedPlayerId(e.target.value)}
-              >
-                <option value="">Select Player</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="newOnlineId" className="block text-gray-300 mb-2">
-                New Online ID
-              </label>
-              <input
-                id="newOnlineId"
-                type="text"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                placeholder="Enter new online ID"
-                value={newOnlineId}
-                onChange={(e) => setNewOnlineId(e.target.value)}
-              />
-            </div>
-
-            <div className="text-center mb-4">
-              <p className="text-gray-300">Total: <span className="text-white font-bold">${onlineIdChangePrice}</span></p>
-            </div>
-
-            <div className="flex justify-between">
-              <button
-                onClick={() => setShowOnlineIdChangeModal(false)}
-                className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleOnlineIdChangeSubmit}
-                disabled={!selectedOnlineIdEvent || !selectedPlayerId || !newOnlineId}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
-              >
-                Submit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Team Rebrand Modal */}
-      {showTeamRebrandModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold text-white mb-4">Team Rebrand Request</h3>
-            
-            <div className="mb-4">
-              <label htmlFor="newTeamName" className="block text-gray-300 mb-2">
-                Team Name
-              </label>
-              <input
-                id="newTeamName"
-                type="text"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                placeholder="Enter team name"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="newTeamTag" className="block text-gray-300 mb-2">
-                Team Tag (3 letters)
-              </label>
-              <input
-                id="newTeamTag"
-                type="text"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                placeholder="Enter 3-letter tag"
-                value={newTeamTag}
-                onChange={(e) => {
-                  if (e.target.value.length <= 3) {
-                    setNewTeamTag(e.target.value.toUpperCase());
-                  }
-                }}
-                maxLength={3}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="newTeamLogo" className="block text-gray-300 mb-2">
-                Team Logo
-              </label>
-              <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 bg-gray-700 rounded-md overflow-hidden">
-                  {newTeamLogoPreview ? (
-                    <img
-                      src={newTeamLogoPreview}
-                      alt="Team Logo Preview"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : team?.logo_url ? (
-                    <img
-                      src={team.logo_url}
-                      alt="Current Team Logo"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Users className="w-8 h-8 text-gray-500" />
-                    </div>
-                  )}
                 </div>
-                <input
-                  id="newTeamLogo"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoChange}
-                  ref={logoInputRef}
-                />
+              </div>
+
+              <div className="text-center mb-4">
+                <p className="text-gray-300">Total: <span className="text-white font-bold">${rosterChangePrice}</span></p>
+              </div>
+
+              <div className="flex justify-between">
                 <button
-                  onClick={() => logoInputRef.current?.click()}
-                  className="px-3 py-1 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+                  onClick={() => setShowRosterChangeModal(false)}
+                  className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
                 >
-                  Select Image
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRosterChangeSubmit}
+                  disabled={!selectedRosterEvent || selectedRosterPlayers.length === 0}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                >
+                  Submit
                 </button>
               </div>
             </div>
+          </div>
+        )}
 
-            <div className="mb-4">
-              <label htmlFor="newTeamDescription" className="block text-gray-300 mb-2">
-                Description
-              </label>
-              <textarea
-                id="newTeamDescription"
-                className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
-                placeholder="Enter team description"
-                value={newTeamDescription}
-                onChange={(e) => setNewTeamDescription(e.target.value)}
-                rows={3}
-              />
-            </div>
+        {/* Online ID Change Modal */}
+        {showOnlineIdChangeModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold text-white mb-4">Online ID Change Request</h3>
+              
+              <div className="mb-4">
+                <label htmlFor="onlineIdEventSelect" className="block text-gray-300 mb-2">
+                  Select Tournament/League
+                </label>
+                <select
+                  id="onlineIdEventSelect"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  value={selectedOnlineIdEvent || ''}
+                  onChange={(e) => setSelectedOnlineIdEvent(e.target.value)}
+                >
+                  <option value="">Select Tournament/League</option>
+                  {availableEvents.map((event) => (
+                    <option key={event.id} value={event.id}>
+                      {event.name} ({event.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="text-center mb-4">
-              <p className="text-gray-300">Total: <span className="text-white font-bold">${teamRebrandPrice}</span></p>
-            </div>
+              <div className="mb-4">
+                <label htmlFor="playerSelect" className="block text-gray-300 mb-2">
+                  Select Player
+                </label>
+                <select
+                  id="playerSelect"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  value={selectedPlayerId || ''}
+                  onChange={(e) => setSelectedPlayerId(e.target.value)}
+                >
+                  <option value="">Select Player</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex justify-between">
-              <button
-                onClick={() => setShowTeamRebrandModal(false)}
-                className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleTeamRebrandSubmit}
-                disabled={!newTeamName || !newTeamTag || newTeamTag.length !== 3}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
-              >
-                Submit
-              </button>
+              <div className="mb-4">
+                <label htmlFor="newOnlineId" className="block text-gray-300 mb-2">
+                  New Online ID
+                </label>
+                <input
+                  id="newOnlineId"
+                  type="text"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  placeholder="Enter new online ID"
+                  value={newOnlineId}
+                  onChange={(e) => setNewOnlineId(e.target.value)}
+                />
+              </div>
+
+              <div className="text-center mb-4">
+                <p className="text-gray-300">Total: <span className="text-white font-bold">${onlineIdChangePrice}</span></p>
+              </div>
+
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setShowOnlineIdChangeModal(false)}
+                  className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleOnlineIdChangeSubmit}
+                  disabled={!selectedOnlineIdEvent || !selectedPlayerId || !newOnlineId}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                >
+                  Submit
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Team Rebrand Modal */}
+        {showTeamRebrandModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold text-white mb-4">Team Rebrand Request</h3>
+              
+              <div className="mb-4">
+                <label htmlFor="newTeamName" className="block text-gray-300 mb-2">
+                  Team Name
+                </label>
+                <input
+                  id="newTeamName"
+                  type="text"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  placeholder="Enter team name"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                />
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="newTeamTag" className="block text-gray-300 mb-2">
+                  Team Tag (3 letters)
+                </label>
+                <input
+                  id="newTeamTag"
+                  type="text"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  placeholder="Enter 3-letter tag"
+                  value={newTeamTag}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 3) {
+                      setNewTeamTag(e.target.value.toUpperCase());
+                    }
+                  }}
+                  maxLength={3}
+                />
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="newTeamLogo" className="block text-gray-300 mb-2">
+                  Team Logo
+                </label>
+                <div className="flex items-center space-x-4">
+                  <div className="w-16 h-16 bg-gray-700 rounded-md overflow-hidden">
+                    {newTeamLogoPreview ? (
+                      <img
+                        src={newTeamLogoPreview}
+                        alt="Team Logo Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : team?.logo_url ? (
+                      <img
+                        src={team.logo_url}
+                        alt="Current Team Logo"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Users className="w-8 h-8 text-gray-500" />
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    id="newTeamLogo"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleLogoChange}
+                    ref={logoInputRef}
+                  />
+                  <button
+                    onClick={() => logoInputRef.current?.click()}
+                    className="px-3 py-1 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+                  >
+                    Select Image
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="newTeamDescription" className="block text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  id="newTeamDescription"
+                  className="w-full bg-gray-700 border-gray-600 rounded-md px-4 py-2 text-white"
+                  placeholder="Enter team description"
+                  value={newTeamDescription}
+                  onChange={(e) => setNewTeamDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="text-center mb-4">
+                <p className="text-gray-300">Total: <span className="text-white font-bold">${teamRebrandPrice}</span></p>
+              </div>
+
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setShowTeamRebrandModal(false)}
+                  className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleTeamRebrandSubmit}
+                  disabled={!newTeamName || !newTeamTag || newTeamTag.length !== 3}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Roster Change Confirmation Modal */}
+        {rosterChangeConfirmation.show && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              {rosterChangeConfirmation.step === 1 ? (
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-4">Confirm Roster Change</h3>
+                  
+                  <p className="text-gray-300 mb-4">
+                    You are requesting to change the roster for <span className="font-bold text-red-500">{availableEvents.find(e => e.id === selectedRosterEvent)?.name}</span> with <span className="font-bold text-green-500">{selectedRosterPlayers.length} players</span> for <span className="font-bold text-white">${rosterChangePrice} USD</span>.
+                  </p>
+                  
+                  <div className="mb-4">
+                    <h4 className="text-white mb-2">Selected Players:</h4>
+                    <div className="max-h-40 overflow-y-auto bg-gray-700 rounded-md p-2">
+                      {selectedRosterPlayers.map(player => (
+                        <div 
+                          key={player.id}
+                          className="flex items-center mb-2 bg-gray-600/50 p-2 rounded-md"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-gray-600 overflow-hidden mr-2">
+                            {player.avatar_url ? (
+                              <img 
+                                src={player.avatar_url} 
+                                alt={player.display_name}
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <User2 className="w-6 h-6 p-1 text-green-500" />
+                            )}
+                          </div>
+                          <span className="text-white">{player.display_name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-center space-x-4">
+                    <button
+                      onClick={() => setRosterChangeConfirmation({...rosterChangeConfirmation, step: 2})}
+                      className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                    >
+                      Continue
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRosterChangeConfirmation({show: false, step: 1});
+                        setShowRosterChangeModal(true);
+                      }}
+                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h3 className="text-xl font-bold text-white mb-4">Final Confirmation</h3>
+                  <p className="text-gray-300 mb-4">
+                    Type "<span className="font-bold text-white">{availableEvents.find(e => e.id === selectedRosterEvent)?.name}</span>" to confirm the roster change.
+                  </p>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                    placeholder={`Type ${availableEvents.find(e => e.id === selectedRosterEvent)?.name}`}
+                    onChange={(e) => {
+                      if (e.target.value === availableEvents.find(ev => ev.id === selectedRosterEvent)?.name) {
+                        processRosterChangePayment();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => setRosterChangeConfirmation({...rosterChangeConfirmation, step: 1})}
+                    className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Online ID Change Confirmation Modal */}
+        {onlineIdChangeConfirmation.show && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              {onlineIdChangeConfirmation.step === 1 ? (
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-4">Confirm Online ID Change</h3>
+                  
+                  <p className="text-gray-300 mb-4">
+                    You are requesting to change the online ID for <span className="font-bold text-green-500">{members.find(m => m.id === selectedPlayerId)?.display_name}</span> to <span className="font-bold text-white">{newOnlineId}</span>.
+                  </p>
+                  
+                  <div className="mb-4">
+                    <h4 className="text-white mb-2">Current Online ID:</h4>
+                    <p className="text-gray-300">{members.find(m => m.id === selectedPlayerId)?.online_id}</p>
+                  </div>
+                  
+                  <div className="flex justify-center space-x-4">
+                    <button
+                      onClick={() => setOnlineIdChangeConfirmation({...onlineIdChangeConfirmation, step: 2})}
+                      className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setOnlineIdChangeConfirmation({show: false, step: 1})}
+                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h3 className="text-xl font-bold text-white mb-4">Final Confirmation</h3>
+                  <p className="text-gray-300 mb-4">
+                    Type "<span className="font-bold text-white">{newOnlineId}</span>" to confirm the online ID change.
+                  </p>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                    placeholder="Enter new online ID"
+                    value={newOnlineId}
+                    onChange={(e) => setNewOnlineId(e.target.value)}
+                  />
+                  <button
+                    onClick={() => setOnlineIdChangeConfirmation({...onlineIdChangeConfirmation, step: 1})}
+                    className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Team Rebrand Confirmation Modal */}
+        {teamRebrandConfirmation.show && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              {teamRebrandConfirmation.step === 1 ? (
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-4">Confirm Team Rebrand</h3>
+                  
+                  <p className="text-gray-300 mb-4">
+                    You are requesting to rebrand your team from <span className="font-bold text-red-500">"{team?.name}"</span> to <span className="font-bold text-green-500">"{newTeamName}"</span>.
+                  </p>
+                  
+                  <div className="mb-4">
+                    <h4 className="text-white mb-2">Current Team Information:</h4>
+                    <ul className="list-disc pl-6">
+                      <li>Name: <span className="font-bold">{team?.name}</span></li>
+                      <li>Tag: <span className="font-bold">{team?.team_tag}</span></li>
+                      <li>Logo URL: <span className="font-bold">{team?.logo_url}</span></li>
+                      <li>Description: <span className="font-bold">{team?.description}</span></li>
+                    </ul>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <h4 className="text-white mb-2">New Team Information:</h4>
+                    <ul className="list-disc pl-6">
+                      <li>Name: <span className="font-bold">{newTeamName}</span></li>
+                      <li>Tag: <span className="font-bold">{newTeamTag}</span></li>
+                      <li>Logo URL: <span className="font-bold">{newTeamLogoPreview ? newTeamLogoPreview : 'No new logo uploaded'}</span></li>
+                      <li>Description: <span className="font-bold">{newTeamDescription}</span></li>
+                    </ul>
+                  </div>
+                  
+                  <div className="flex justify-center space-x-4">
+                    <button
+                      onClick={() => setTeamRebrandConfirmation({...teamRebrandConfirmation, step: 2})}
+                      className="px-4 py-2 bg-green-700 text-white rounded-md hover:bg-green-600"
+                    >
+                      Continue
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTeamRebrandConfirmation({show: false, step: 1});
+                        setShowTeamRebrandModal(true);
+                      }}
+                      className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h3 className="text-xl font-bold text-white mb-4">Final Confirmation</h3>
+                  <p className="text-gray-300 mb-4">
+                    Type "<span className="font-bold text-white">{newTeamName}</span>" to confirm the rebrand.
+                  </p>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-700 border-gray-600 rounded-md mb-4 px-4 py-2 text-white"
+                    placeholder="Enter new team name"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                  />
+                  <button
+                    onClick={() => setTeamRebrandConfirmation({...teamRebrandConfirmation, step: 1})}
+                    className="px-4 py-2 border border-gray-600 text-gray-300 rounded-md hover:bg-gray-700"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
