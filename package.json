@@ -15,13 +15,17 @@
     "test:coverage": "npm run test:frontend:coverage && npm run test:backend:coverage",
     "test:frontend:coverage": "cd frontend && vitest run --coverage",
     "test:backend:coverage": "cd backend && python -m pytest tests/ --cov=. --cov-report=html",
-    "supabase": "supabase"
+    "supabase": "supabase",
+    "db:fix": "node scripts/apply-database-fixes.js",
+    "db:validate": "node scripts/validate-database-schema.js"
   },
   "devDependencies": {
     "concurrently": "^8.0.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
     "@types/uuid": "^10.0.0",
+    "dotenv": "^16.4.7",
     "react-square-web-payments-sdk": "^3.2.3",
     "uuid": "^11.1.0"
   }
