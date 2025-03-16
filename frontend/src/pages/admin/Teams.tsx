@@ -165,13 +165,19 @@ function AdminTeams() {
     if (!currentTeam) return;
 
     try {
-      const { error } = await supabase
-        .from('teams')
-        .delete()
-        .eq('id', currentTeam.id);
+      console.log('Deleting team with ID:', currentTeam.id);
+      
+      // Use the delete_team RPC function instead of directly deleting
+      const { error } = await supabase.rpc('delete_team', {
+        p_team_id: currentTeam.id
+      });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error calling delete_team function:', error);
+        throw error;
+      }
 
+      console.log('Team deleted successfully');
       // Refresh team list
       fetchTeams();
       setShowDeleteModal(false);

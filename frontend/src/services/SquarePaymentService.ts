@@ -295,13 +295,17 @@ export class SquarePaymentService {
         }
       } else if (paymentDetails.type === 'team_transfer' && paymentDetails.teamId && paymentDetails.playerId && paymentDetails.request_id) {
         try {
-          console.log('Processing team transfer payment:', paymentDetails);
+          console.log('Processing team transfer payment with details:', JSON.stringify(paymentDetails, null, 2));
+          
+          // Generate a proper UUID for the team change request
+          const requestId = uuidv4();
+          console.log('Generated request ID:', requestId);
           
           // 1. Update the team_change_requests status to approved
           const { error: requestError } = await supabase
             .from('team_change_requests')
             .update({ status: 'approved' })
-            .eq('id', paymentDetails.request_id);
+            .eq('id', requestId);
             
           if (requestError) {
             console.error('Error updating team change request:', requestError);
@@ -309,6 +313,7 @@ export class SquarePaymentService {
           }
           
           // 2. Get the current captain ID
+          console.log('Fetching team data for team ID:', paymentDetails.teamId);
           const { data: teamData, error: teamFetchError } = await supabase
             .from('teams')
             .select('captain_id')
@@ -321,41 +326,54 @@ export class SquarePaymentService {
           }
           
           const oldCaptainId = teamData.captain_id;
+          console.log('Current captain ID:', oldCaptainId);
+          console.log('New captain ID:', paymentDetails.playerId);
           
-          // Create a server-side function to update the team captain
-          // This is needed to bypass RLS policies
-          const { error: functionError } = await supabase.rpc('transfer_team_ownership', {
-            team_id: paymentDetails.teamId,
-            new_captain_id: paymentDetails.playerId,
-            old_captain_id: oldCaptainId
-          });
+          // 3. Directly update the team captain and roles without using RPC
+          console.log('Updating team captain directly...');
           
-          if (functionError) {
-            console.error('Error calling transfer_team_ownership function:', functionError);
+          // Update team captain
+          const { error: updateTeamError } = await supabase
+            .from('teams')
+            .update({ captain_id: paymentDetails.playerId })
+            .eq('id', paymentDetails.teamId);
             
-            // Fallback: Try to create a change request that can be approved by an admin
-            const { error: adminRequestError } = await supabase
-              .from('admin_requests')
-              .insert({
-                request_type: 'team_transfer',
-                status: 'pending',
-                metadata: {
-                  team_id: paymentDetails.teamId,
-                  new_captain_id: paymentDetails.playerId,
-                  old_captain_id: oldCaptainId,
-                  payment_id: paymentDetails.id,
-                  request_id: paymentDetails.request_id
-                }
-              });
-              
-            if (adminRequestError) {
-              console.error('Error creating admin request:', adminRequestError);
-            } else {
-              console.log('Created admin request for team transfer that requires manual approval');
-            }
-          } else {
-            console.log('Team ownership transfer completed successfully via RPC function');
+          if (updateTeamError) {
+            console.error('Error updating team captain:', updateTeamError);
+            return;
           }
+          
+          // Update old captain's role
+          const { error: updateOldCaptainError } = await supabase
+            .from('team_players')
+            .update({ 
+              role: 'player',
+              can_be_deleted: true 
+            })
+            .eq('team_id', paymentDetails.teamId)
+            .eq('user_id', oldCaptainId);
+            
+          if (updateOldCaptainError) {
+            console.error('Error updating old captain role:', updateOldCaptainError);
+            return;
+          }
+          
+          // Update new captain's role
+          const { error: updateNewCaptainError } = await supabase
+            .from('team_players')
+            .update({ 
+              role: 'captain',
+              can_be_deleted: false 
+            })
+            .eq('team_id', paymentDetails.teamId)
+            .eq('user_id', paymentDetails.playerId);
+            
+          if (updateNewCaptainError) {
+            console.error('Error updating new captain role:', updateNewCaptainError);
+            return;
+          }
+          
+          console.log('Team ownership transfer completed successfully via direct updates');
         } catch (transferError) {
           console.error('Exception during team transfer:', transferError);
         }

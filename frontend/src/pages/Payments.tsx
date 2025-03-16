@@ -198,8 +198,10 @@ const Payments = () => {
     } = paymentDetails.metadata.changeRequestData;
     
     try {
-      // Generate a UUID for the request ID
+      // Always generate a new UUID for the team change request
       const requestId = uuidv4();
+      
+      console.log('Creating team change request with ID:', requestId);
       
       const { data, error } = await supabase
         .from('team_change_requests')

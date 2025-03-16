@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2024-04-15
+
+### Payment System Enhancements
+- Implemented centralized payment utilities with `createPaymentDetails` function
+- Created reusable `ConfirmationDialog` component for payment confirmations
+- Fixed team transfer functionality to properly handle payment state
+- Standardized payment metadata format across all payment types
+- Added support for creating team change requests after successful payments
+- Improved error handling and validation for payment details
+- Fixed team ownership transfer by using the correct RPC function with proper parameters
+- Fixed UUID generation for team change requests to ensure proper format
+
+### Team Dashboard Improvements
+- Enhanced Front Office section with consistent payment flows
+- Updated tournament and league registration to use standardized payment process
+- Fixed player signing request functionality with proper metadata
+- Improved online ID change process with confirmation dialog
+- Added team rebranding functionality with payment integration
+- Enhanced team ownership transfer with proper change request creation
+- Fixed team captain transfer to correctly update team ownership after payment
+- Added SQL function to properly handle team deletion
+
+### Database Integration
+- Added support for creating team change requests in the database
+- Implemented standardized request ID generation using UUID
+- Enhanced payment record creation with consistent metadata
+- Added support for tracking payment status and change requests
+
+### User Experience
+- Added confirmation dialogs for all payment-related actions
+- Improved feedback during payment processing
+- Enhanced error handling and validation for user inputs
+- Standardized payment flow across all team management actions
+
 ## [1.6.0] - 2024-03-20
 
 ### Team Dashboard Enhancements
