@@ -1193,7 +1193,7 @@ const TeamDashboard = () => {
             {/* Team Roster Section */}
             <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-white">Team Roster</h2>
+                <h2 className="text-xl font-bold text-white">Free Agency</h2>
                 <button
                   onClick={() => setShowSignPlayers(!showSignPlayers)}
                   className="text-green-500 hover:text-green-400 flex items-center space-x-2"

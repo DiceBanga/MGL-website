@@ -12,6 +12,17 @@ export class SquarePaymentService {
       console.log('Creating payment with Square...', { sourceId, amount: paymentDetails.amount });
       console.log('Original payment details:', paymentDetails);
       
+      // For team transfers, log additional details
+      if (paymentDetails.type === 'team_transfer') {
+        console.log('Processing team transfer payment with details:', {
+          teamId: paymentDetails.teamId,
+          captainId: paymentDetails.captainId,
+          newCaptainId: paymentDetails.playerId,
+          requestId: paymentDetails.request_id,
+          referenceId: paymentDetails.referenceId
+        });
+      }
+      
       // Create pending payment record first
       const { data: paymentRecord, error: dbError } = await this.createPendingPaymentRecord(paymentDetails);
 
@@ -282,6 +293,72 @@ export class SquarePaymentService {
         } catch (regUpdateError) {
           console.error('Exception updating league registration:', regUpdateError);
         }
+      } else if (paymentDetails.type === 'team_transfer' && paymentDetails.teamId && paymentDetails.playerId && paymentDetails.request_id) {
+        try {
+          console.log('Processing team transfer payment:', paymentDetails);
+          
+          // 1. Update the team_change_requests status to approved
+          const { error: requestError } = await supabase
+            .from('team_change_requests')
+            .update({ status: 'approved' })
+            .eq('id', paymentDetails.request_id);
+            
+          if (requestError) {
+            console.error('Error updating team change request:', requestError);
+            return;
+          }
+          
+          // 2. Get the current captain ID
+          const { data: teamData, error: teamFetchError } = await supabase
+            .from('teams')
+            .select('captain_id')
+            .eq('id', paymentDetails.teamId)
+            .single();
+            
+          if (teamFetchError) {
+            console.error('Error fetching team data:', teamFetchError);
+            return;
+          }
+          
+          const oldCaptainId = teamData.captain_id;
+          
+          // Create a server-side function to update the team captain
+          // This is needed to bypass RLS policies
+          const { error: functionError } = await supabase.rpc('transfer_team_ownership', {
+            team_id: paymentDetails.teamId,
+            new_captain_id: paymentDetails.playerId,
+            old_captain_id: oldCaptainId
+          });
+          
+          if (functionError) {
+            console.error('Error calling transfer_team_ownership function:', functionError);
+            
+            // Fallback: Try to create a change request that can be approved by an admin
+            const { error: adminRequestError } = await supabase
+              .from('admin_requests')
+              .insert({
+                request_type: 'team_transfer',
+                status: 'pending',
+                metadata: {
+                  team_id: paymentDetails.teamId,
+                  new_captain_id: paymentDetails.playerId,
+                  old_captain_id: oldCaptainId,
+                  payment_id: paymentDetails.id,
+                  request_id: paymentDetails.request_id
+                }
+              });
+              
+            if (adminRequestError) {
+              console.error('Error creating admin request:', adminRequestError);
+            } else {
+              console.log('Created admin request for team transfer that requires manual approval');
+            }
+          } else {
+            console.log('Team ownership transfer completed successfully via RPC function');
+          }
+        } catch (transferError) {
+          console.error('Exception during team transfer:', transferError);
+        }
       }
     } catch (error) {
       console.error('Error updating registration status:', error);
@@ -351,7 +428,10 @@ export class SquarePaymentService {
         reference_id: paymentDetails.referenceId,
         event_type: paymentDetails.type,
         event_id: paymentDetails.eventId,
-        team_id: paymentDetails.teamId
+        team_id: paymentDetails.teamId,
+        player_id: paymentDetails.playerId,
+        request_id: paymentDetails.request_id,
+        payment_details: paymentDetails // Store the entire payment details in metadata
       };
 
       const { error } = await supabase
@@ -369,6 +449,10 @@ export class SquarePaymentService {
 
       if (error) {
         console.error('Error recording payment in database:', error);
+      } else {
+        console.log('Payment recorded successfully, updating registration status...');
+        // Update registration status based on payment type
+        await this.updateRegistrationStatus(paymentDetails);
       }
     } catch (error) {
       console.error('Exception recording payment in database:', error);
