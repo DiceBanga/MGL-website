@@ -2,19 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Edit, Trash2, Search, Filter, UserPlus, Shield, X, Check, AlertTriangle, Home, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { DbPlayer } from '../../types/database';
 
-interface User {
-  id: string;
-  email: string;
-  display_name: string;
-  role: string;
+// Extended interface for UI-specific properties
+interface UserWithStatus extends DbPlayer {
   status: string;
-  created_at: string;
-  avatar_url: string | null;
+  id: string; // Alias for user_id to maintain compatibility
 }
 
 function AdminUsers() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -23,7 +20,7 @@ function AdminUsers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserWithStatus | null>(null);
   const [formData, setFormData] = useState({
     display_name: '',
     email: '',
@@ -49,43 +46,39 @@ function AdminUsers() {
       // Get player profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('players')
-        .select('*');
+        .select('*')
+        .order(sortField, { ascending: sortDirection === 'asc' });
 
       if (profilesError) throw profilesError;
 
-      // Combine the data
-      const combinedUsers = profiles.map(profile => {
-        return {
-          id: profile.user_id,
-          email: profile.email,
-          display_name: profile.display_name,
-          role: profile.role || 'user',
-          status: profile.status || 'active',
-          created_at: profile.created_at,
-          avatar_url: profile.avatar_url
-        };
-      });
+      // Transform profiles to match UserWithStatus interface
+      const transformedUsers: UserWithStatus[] = (profiles || []).map(profile => ({
+        user_id: profile.user_id,
+        id: profile.user_id, // Add id as alias for user_id
+        display_name: profile.display_name,
+        email: profile.email,
+        role: profile.role,
+        avatar_url: profile.avatar_url,
+        online_id: profile.online_id,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
+        status: profile.status || 'active' // Default status if not present
+      }));
 
-      // Apply filters and sorting
-      let filteredUsers = combinedUsers;
-      
+      // Apply status filter if not 'all'
+      let filteredUsers = transformedUsers;
       if (statusFilter !== 'all') {
-        filteredUsers = filteredUsers.filter(user => user.status === statusFilter);
+        filteredUsers = transformedUsers.filter(user => user.status === statusFilter);
       }
 
-      // Sort users
-      filteredUsers.sort((a, b) => {
-        const fieldA = a[sortField as keyof User] || '';
-        const fieldB = b[sortField as keyof User] || '';
-        
-        if (typeof fieldA === 'string' && typeof fieldB === 'string') {
-          return sortDirection === 'asc' 
-            ? fieldA.localeCompare(fieldB)
-            : fieldB.localeCompare(fieldA);
-        }
-        
-        return 0;
-      });
+      // Apply search filter if search term exists
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        filteredUsers = filteredUsers.filter(user => 
+          user.display_name.toLowerCase().includes(term) || 
+          user.email.toLowerCase().includes(term)
+        );
+      }
 
       setUsers(filteredUsers);
     } catch (error) {
@@ -121,7 +114,7 @@ function AdminUsers() {
     }
   };
 
-  const handleEditClick = (user: User) => {
+  const handleEditClick = (user: UserWithStatus) => {
     setCurrentUser(user);
     setFormData({
       display_name: user.display_name,
@@ -132,7 +125,7 @@ function AdminUsers() {
     setShowEditModal(true);
   };
 
-  const handleDeleteClick = (user: User) => {
+  const handleDeleteClick = (user: UserWithStatus) => {
     setCurrentUser(user);
     setShowDeleteModal(true);
   };
@@ -279,7 +272,9 @@ function AdminUsers() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
             <form onSubmit={handleSearch} className="flex items-center">
               <div className="relative flex-grow">
+                <label htmlFor="searchUsers" className="sr-only">Search users</label>
                 <input
+                  id="searchUsers"
                   type="text"
                   placeholder="Search users..."
                   value={searchTerm}
@@ -300,6 +295,9 @@ function AdminUsers() {
               <div className="flex items-center">
                 <Filter className="w-5 h-5 text-gray-400 mr-2" />
                 <select
+                  id="statusFilter"
+                  aria-label="Filter by status"
+                  title="Filter by status"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
@@ -433,12 +431,16 @@ function AdminUsers() {
                       <button
                         onClick={() => handleEditClick(user)}
                         className="text-green-500 hover:text-green-400 mr-3"
+                        aria-label={`Edit user ${user.display_name || user.email}`}
+                        title={`Edit user ${user.display_name || user.email}`}
                       >
                         <Edit className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(user)}
                         className="text-red-500 hover:text-red-400"
+                        aria-label={`Delete user ${user.display_name || user.email}`}
+                        title={`Delete user ${user.display_name || user.email}`}
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
@@ -460,6 +462,8 @@ function AdminUsers() {
               <button
                 onClick={() => setShowAddUserModal(false)}
                 className="text-gray-400 hover:text-white"
+                aria-label="Close modal"
+                title="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -472,10 +476,11 @@ function AdminUsers() {
               )}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="newUserEmail" className="block text-sm font-medium text-gray-300 mb-1">
                     Email
                   </label>
                   <input
+                    id="newUserEmail"
                     type="email"
                     value={newUserData.email}
                     onChange={(e) => setNewUserData({...newUserData, email: e.target.value})}
@@ -484,10 +489,11 @@ function AdminUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="newUserPassword" className="block text-sm font-medium text-gray-300 mb-1">
                     Password
                   </label>
                   <input
+                    id="newUserPassword"
                     type="password"
                     value={newUserData.password}
                     onChange={(e) => setNewUserData({...newUserData, password: e.target.value})}
@@ -496,10 +502,11 @@ function AdminUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="newUserDisplayName" className="block text-sm font-medium text-gray-300 mb-1">
                     Display Name
                   </label>
                   <input
+                    id="newUserDisplayName"
                     type="text"
                     value={newUserData.display_name}
                     onChange={(e) => setNewUserData({...newUserData, display_name: e.target.value})}
@@ -507,10 +514,13 @@ function AdminUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="newUserRole" className="block text-sm font-medium text-gray-300 mb-1">
                     Role
                   </label>
                   <select
+                    id="newUserRole"
+                    aria-label="Select user role"
+                    title="Select user role"
                     value={newUserData.role}
                     onChange={(e) => setNewUserData({...newUserData, role: e.target.value})}
                     className="w-full bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
@@ -560,6 +570,8 @@ function AdminUsers() {
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-gray-400 hover:text-white"
+                aria-label="Close edit modal"
+                title="Close edit modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -567,10 +579,11 @@ function AdminUsers() {
             <form onSubmit={handleEditSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="editDisplayName" className="block text-sm font-medium text-gray-300 mb-1">
                     Display Name
                   </label>
                   <input
+                    id="editDisplayName"
                     type="text"
                     value={formData.display_name}
                     onChange={(e) => setFormData({...formData, display_name: e.target.value})}
@@ -579,10 +592,11 @@ function AdminUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="editEmail" className="block text-sm font-medium text-gray-300 mb-1">
                     Email
                   </label>
                   <input
+                    id="editEmail"
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -591,10 +605,13 @@ function AdminUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="editRole" className="block text-sm font-medium text-gray-300 mb-1">
                     Role
                   </label>
                   <select
+                    id="editRole"
+                    aria-label="Select user role"
+                    title="Select user role"
                     value={formData.role}
                     onChange={(e) => setFormData({...formData, role: e.target.value})}
                     className="w-full bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"
@@ -604,10 +621,13 @@ function AdminUsers() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label htmlFor="editStatus" className="block text-sm font-medium text-gray-300 mb-1">
                     Status
                   </label>
                   <select
+                    id="editStatus"
+                    aria-label="Select user status"
+                    title="Select user status"
                     value={formData.status}
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
                     className="w-full bg-gray-700 border-gray-600 rounded-md px-3 py-2 text-white"

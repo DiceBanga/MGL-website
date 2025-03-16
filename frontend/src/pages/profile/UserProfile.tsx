@@ -4,13 +4,13 @@ import { User2, Trophy, GamepadIcon, BarChart2, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DbPlayer, DbTeamMember } from '../../types/database';
 
-interface UserProfile {
-  display_name: string;
-  avatar_url: string | null;
+// Extended interface for UI-specific properties
+interface UserProfileUI extends DbPlayer {
   bio: string | null;
   twitter_handle: string | null;
 }
 
+// Extended interface for team data with team information
 interface TeamWithTeamData {
   team_id: string;
   role: string;
@@ -20,11 +20,19 @@ interface TeamWithTeamData {
   };
 }
 
+// UI-specific interface for team data
+interface TeamUI {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  role: string;
+}
+
 const UserProfile = () => {
   const { userId } = useParams();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfileUI | null>(null);
   const [loading, setLoading] = useState(true);
-  const [teams, setTeams] = useState<any[]>([]);
+  const [teams, setTeams] = useState<TeamUI[]>([]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -43,9 +51,16 @@ const UserProfile = () => {
 
       if (profileError) throw profileError;
 
+      // Transform to UserProfileUI
       setProfile({
+        user_id: profileData.user_id,
         display_name: profileData.display_name,
+        email: profileData.email,
+        role: profileData.role,
         avatar_url: profileData.avatar_url,
+        online_id: profileData.online_id,
+        created_at: profileData.created_at,
+        updated_at: profileData.updated_at,
         bio: profileData.bio,
         twitter_handle: profileData.twitter_handle
       });
@@ -65,6 +80,7 @@ const UserProfile = () => {
 
       if (teamError) throw teamError;
 
+      // Transform the data to match the TeamUI interface
       setTeams(((teamData || []) as unknown as TeamWithTeamData[]).map(team => ({
         id: team.team_id,
         name: team.teams.name,

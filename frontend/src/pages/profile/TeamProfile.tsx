@@ -4,21 +4,12 @@ import { Users, Trophy, Calendar, BarChart2, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DbTeam, DbTeamMember } from '../../types/database';
 
-interface TeamMember {
+interface TeamMemberUI {
   id: string;
   display_name: string;
   role: string;
   jersey_number: number | null;
-}
-
-interface Team {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  website: string | null;
-  wins: number;
-  losses: number;
-  tournaments_played: number;
+  avatar_url?: string | null;
 }
 
 interface TeamWithStandings extends DbTeam {
@@ -30,8 +21,8 @@ interface TeamWithStandings extends DbTeam {
 
 const TeamProfile = () => {
   const { teamId } = useParams();
-  const [team, setTeam] = useState<Team | null>(null);
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [team, setTeam] = useState<DbTeam & { wins: number; losses: number; tournaments_played: number } | null>(null);
+  const [members, setMembers] = useState<TeamMemberUI[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,10 +54,7 @@ const TeamProfile = () => {
       const teamWithStandings = teamData as TeamWithStandings;
       
       setTeam({
-        id: teamWithStandings.id,
-        name: teamWithStandings.name,
-        logo_url: teamWithStandings.logo_url,
-        website: teamWithStandings.website,
+        ...teamWithStandings,
         wins: teamWithStandings.standings?.[0]?.wins || 0,
         losses: teamWithStandings.standings?.[0]?.losses || 0,
         tournaments_played: 0 // This will be set later if needed
@@ -91,23 +79,18 @@ const TeamProfile = () => {
         return;
       }
 
-      interface MemberWithPlayerData extends DbTeamMember {
-        players: {
-          display_name: string;
-          avatar_url: string | null;
-        };
-      }
-
-      setMembers(((membersData || []) as unknown as MemberWithPlayerData[]).map(member => ({
+      // Transform the raw data into our UI format
+      setMembers(((membersData || []) as unknown as DbTeamMember[]).map(member => ({
         id: member.user_id,
         display_name: member.players.display_name,
         role: member.role,
-        jersey_number: member.jersey_number
+        jersey_number: member.jersey_number,
+        avatar_url: member.players.avatar_url
       })));
 
       setLoading(false);
     } catch (error) {
-      console.error('Error in fetchTeamData:', error);
+      console.error('Error:', error);
       setLoading(false);
     }
   };

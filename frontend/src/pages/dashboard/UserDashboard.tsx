@@ -5,30 +5,18 @@ import { useAuthStore } from '../../store/authStore';
 import { supabase } from '../../lib/supabase';
 import { DbPlayer, DbTeamMember } from '../../types/database';
 
+// Auth-related interfaces
 interface User {
   id: string;
   email: string;
   role: string;
 }
 
-interface AuthState {
-  user: User | null;
-  loading: boolean;
-  setUser: (user: User | null) => void;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
-  createPlayerProfile: (userId: string, email: string) => Promise<void>;
-}
-
-interface UserProfile {
-  display_name: string;
-  email: string;
+// UI-specific interfaces that extend database types
+interface PlayerProfileUI extends DbPlayer {
   phone: string | null;
   timezone: string | null;
   language: string;
-  avatar_url: string | null;
   bio: string | null;
   twitter_handle: string | null;
   twitch_handle: string | null;
@@ -37,7 +25,7 @@ interface UserProfile {
   discord_handle: string | null;
 }
 
-interface UserStats {
+interface UserStatsUI {
   games_played: number;
   win_rate: number;
   avg_score: number;
@@ -46,14 +34,14 @@ interface UserStats {
   mvp_count: number;
 }
 
-interface UserTeam {
+interface UserTeamUI {
   id: string;
   name: string;
   logo_url: string | null;
   role: string;
 }
 
-interface AvailableTeam {
+interface AvailableTeamUI {
   id: string;
   name: string;
   logo_url: string | null;
@@ -64,8 +52,8 @@ interface AvailableTeam {
 const UserDashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [stats, setStats] = useState<UserStats>({
+  const [profile, setProfile] = useState<PlayerProfileUI | null>(null);
+  const [stats, setStats] = useState<UserStatsUI>({
     games_played: 32,
     win_rate: 68,
     avg_score: 86.5,
@@ -73,16 +61,16 @@ const UserDashboard = () => {
     total_points: 1240,
     mvp_count: 5
   });
-  const [teams, setTeams] = useState<UserTeam[]>([]);
+  const [teams, setTeams] = useState<UserTeamUI[]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<Partial<UserProfile>>({});
+  const [formData, setFormData] = useState<Partial<PlayerProfileUI>>({});
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
   const [newTeam, setNewTeam] = useState({ name: '', description: '' });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showTeamBrowser, setShowTeamBrowser] = useState(false);
-  const [availableTeams, setAvailableTeams] = useState<AvailableTeam[]>([]);
+  const [availableTeams, setAvailableTeams] = useState<AvailableTeamUI[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isJoining, setIsJoining] = useState<string | null>(null);
 
@@ -99,35 +87,37 @@ const UserDashboard = () => {
   const fetchUserProfile = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from('players')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
 
-    if (error) {
-      console.error('Error fetching profile:', error);
-      return;
+      if (error) {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+
+      // Convert DbPlayer to PlayerProfileUI by adding UI-specific fields
+      const playerProfile: PlayerProfileUI = {
+        ...data as DbPlayer,
+        phone: data.phone || null,
+        timezone: data.timezone || null,
+        language: data.language || 'en',
+        bio: data.bio || null,
+        twitter_handle: data.twitter_handle || null,
+        twitch_handle: data.twitch_handle || null,
+        youtube_handle: data.youtube_handle || null,
+        instagram_handle: data.instagram_handle || null,
+        discord_handle: data.discord_handle || null
+      };
+
+      setProfile(playerProfile);
+      setFormData(playerProfile);
+    } catch (error) {
+      console.error('Error:', error);
     }
-
-    // Convert DbPlayer to UserProfile
-    const userProfile: UserProfile = {
-      display_name: data.display_name,
-      email: data.email,
-      phone: data.phone || null,
-      timezone: data.timezone || null,
-      language: data.language || 'en',
-      avatar_url: data.avatar_url,
-      bio: data.bio || null,
-      twitter_handle: data.twitter_handle || null,
-      twitch_handle: data.twitch_handle || null,
-      youtube_handle: data.youtube_handle || null,
-      instagram_handle: data.instagram_handle || null,
-      discord_handle: data.discord_handle || null
-    };
-
-    setProfile(userProfile);
-    setFormData(userProfile);
   };
 
   const fetchUserTeams = async () => {
@@ -234,7 +224,7 @@ const UserDashboard = () => {
         .update({
           avatar_url: publicUrl,
           avatar_upload_path: filePath
-        } as Partial<DbPlayer>)
+        } as Partial<PlayerProfileUI>)
         .eq('user_id', user.id);
 
       if (updateError) throw updateError;
@@ -320,7 +310,7 @@ const UserDashboard = () => {
     
     const { error } = await supabase
       .from('players')
-      .update(formData as Partial<DbPlayer>)
+      .update(formData as Partial<PlayerProfileUI>)
       .eq('user_id', user?.id);
 
     if (error) {
@@ -328,7 +318,7 @@ const UserDashboard = () => {
       return;
     }
 
-    setProfile(formData as UserProfile);
+    setProfile(formData as PlayerProfileUI);
     setIsEditing(false);
   };
 
@@ -340,6 +330,8 @@ const UserDashboard = () => {
           <button
             onClick={() => setShowTeamBrowser(false)}
             className="text-gray-400 hover:text-white"
+            aria-label="Close team browser"
+            title="Close team browser"
           >
             <X className="w-5 h-5" />
           </button>
@@ -419,6 +411,9 @@ const UserDashboard = () => {
                   <div 
                     className="relative w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center cursor-pointer group"
                     onClick={handleAvatarClick}
+                    role="button"
+                    aria-label="Change avatar"
+                    title="Change avatar"
                   >
                     {profile?.avatar_url ? (
                       <img
@@ -457,6 +452,7 @@ const UserDashboard = () => {
                     onClick={() => setIsEditing(!isEditing)}
                     className="text-green-500 hover:text-green-400"
                     aria-label={isEditing ? "Cancel editing" : "Edit profile"}
+                    title={isEditing ? "Cancel editing" : "Edit profile"}
                   >
                     <Settings className="w-5 h-5" />
                   </button>

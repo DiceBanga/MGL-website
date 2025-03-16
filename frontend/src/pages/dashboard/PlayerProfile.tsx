@@ -5,15 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { DbPlayer, DbTeamMember } from '../../types/database';
 
-interface Player {
-  user_id: string;
-  display_name: string;
-  email: string;
-  online_id: string | null;
-  avatar_url: string | null;
-}
-
-interface Team {
+// UI-specific interfaces that extend database types with additional UI properties
+interface TeamUI {
   id: string;
   name: string;
   logo_url: string | null;
@@ -22,7 +15,7 @@ interface Team {
   isCaptain: boolean;
 }
 
-interface JoinRequest {
+interface JoinRequestUI {
   id: string;
   team_id: string;
   team_name: string;
@@ -33,11 +26,11 @@ interface JoinRequest {
 const PlayerProfile = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const [player, setPlayer] = useState<Player | null>(null);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [player, setPlayer] = useState<DbPlayer | null>(null);
+  const [teams, setTeams] = useState<TeamUI[]>([]);
+  const [joinRequests, setJoinRequests] = useState<JoinRequestUI[]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<Partial<Player>>({});
+  const [formData, setFormData] = useState<Partial<DbPlayer>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -92,18 +85,21 @@ const PlayerProfile = () => {
         return;
       }
 
-      // Fix the type issue by using a more specific type
-      interface TeamWithTeamData extends DbTeamMember {
+      // Define a type that matches the actual structure of the data returned from Supabase
+      type RawTeamData = {
+        team_id: string;
+        role: string;
+        jersey_number: number | null;
         teams: {
           id: string;
           name: string;
           logo_url: string | null;
           captain_id: string;
         };
-      }
+      };
 
-      setTeams(((teamsData || []) as unknown as TeamWithTeamData[]).map(team => ({
-        id: team.team_id,
+      setTeams(((teamsData || []) as unknown as RawTeamData[]).map(team => ({
+        id: team.teams.id,
         name: team.teams.name,
         logo_url: team.teams.logo_url,
         role: team.role,

@@ -79,6 +79,29 @@ export interface DbJoinRequest {
 }
 
 /**
+ * Game related types
+ */
+export interface DbGame {
+  id: string;
+  home_team_id: string;
+  away_team_id: string;
+  home_score: number | null;
+  away_score: number | null;
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+  scheduled_at: string;
+  created_at: string;
+  updated_at: string;
+  home_team?: {
+    name: string;
+    logo_url?: string | null;
+  };
+  away_team?: {
+    name: string;
+    logo_url?: string | null;
+  };
+}
+
+/**
  * Tournament related types
  */
 export interface DbTournament {

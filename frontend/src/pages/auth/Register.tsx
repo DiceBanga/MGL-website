@@ -123,10 +123,11 @@ const Register = () => {
                   <User2 className="w-12 h-12 text-gray-400" />
                 )}
               </div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="avatar" className="block text-sm font-medium text-gray-300 mb-2">
                 Profile Picture
               </label>
               <input
+                id="avatar"
                 type="file"
                 accept="image/*"
                 onChange={handleAvatarChange}

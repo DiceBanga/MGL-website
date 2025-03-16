@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-interface FAQItem {
+interface FAQUI {
   question: string;
   answer: string;
 }
 
-const faqs: FAQItem[] = [
+const faqs: FAQUI[] = [
   {
     question: "What is Militia Gaming League?",
     answer: "Militia Gaming League (MGL) is an esports organization specializing in competitive NBA 2K tournaments. We host both live and online events, bringing together top players, esports organizations, and 2K professionals."

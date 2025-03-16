@@ -2,26 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { TowerControl as GameController, Calendar, Trophy, Users, ChevronLeft, ChevronRight, BarChart2, User2, Twitter, Instagram, Youtube, Facebook, Twitch, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-
-interface Game {
-  id: string;
-  home_team: { name: string };
-  away_team: { name: string };
-  home_score?: number;
-  away_score?: number;
-  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
-  scheduled_at: string;
-}
-
-interface RawGameResponse {
-  id: string;
-  home_team: { name: string } | null;
-  away_team: { name: string } | null;
-  home_score: number | null;
-  away_score: number | null;
-  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
-  scheduled_at: string;
-}
+import { DbGame } from '../types/database';
 
 const headlines = [
   {
@@ -43,7 +24,7 @@ const headlines = [
 
 function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [games, setGames] = useState<Game[]>([]);
+  const [games, setGames] = useState<DbGame[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -64,16 +45,35 @@ function Home() {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
+      // Define a type for the raw response from Supabase
+      interface RawGameResponse {
+        id: string;
+        home_team_id: string;
+        away_team_id: string;
+        home_score: number | null;
+        away_score: number | null;
+        status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+        scheduled_at: string;
+        created_at: string;
+        updated_at: string;
+        home_team: { name: string; logo_url: string | null }[];
+        away_team: { name: string; logo_url: string | null }[];
+      }
+
       const { data: rawData, error } = await supabase
         .from('games')
         .select(`
           id,
-          home_team:home_team_id(name),
-          away_team:away_team_id(name),
+          home_team_id,
+          away_team_id,
           home_score,
           away_score,
           status,
-          scheduled_at
+          scheduled_at,
+          created_at,
+          updated_at,
+          home_team:home_team_id(name, logo_url),
+          away_team:away_team_id(name, logo_url)
         `)
         .gte('scheduled_at', today.toISOString())
         .lt('scheduled_at', tomorrow.toISOString())
@@ -81,17 +81,30 @@ function Home() {
 
       if (error) throw error;
       
-      // Transform the data to match the Game interface
-      const transformedGames: Game[] = (rawData || []).map(game => {
-        const rawGame = game as unknown as RawGameResponse;
+      // Transform the data to match the DbGame interface
+      const transformedGames: DbGame[] = (rawData as RawGameResponse[] || []).map(game => {
+        // Use type assertion to handle possibly undefined arrays
+        const homeTeam = (game.home_team as any[]) || [];
+        const awayTeam = (game.away_team as any[]) || [];
+        
         return {
-          id: rawGame.id,
-          home_team: { name: rawGame.home_team?.name || 'TBD' },
-          away_team: { name: rawGame.away_team?.name || 'TBD' },
-          home_score: rawGame.home_score || undefined,
-          away_score: rawGame.away_score || undefined,
-          status: rawGame.status,
-          scheduled_at: rawGame.scheduled_at
+          id: game.id,
+          home_team_id: game.home_team_id,
+          away_team_id: game.away_team_id,
+          home_score: game.home_score,
+          away_score: game.away_score,
+          status: game.status,
+          scheduled_at: game.scheduled_at,
+          created_at: game.created_at,
+          updated_at: game.updated_at,
+          home_team: { 
+            name: homeTeam[0]?.name || 'TBD',
+            logo_url: homeTeam[0]?.logo_url
+          },
+          away_team: { 
+            name: awayTeam[0]?.name || 'TBD',
+            logo_url: awayTeam[0]?.logo_url
+          }
         };
       });
       
@@ -244,6 +257,7 @@ function Home() {
                   : 'bg-white/50 hover:bg-white/70'
               }`}
               aria-label={`Go to slide ${index + 1}`}
+              title={`Go to slide ${index + 1}`}
             />
           ))}
         </div>
