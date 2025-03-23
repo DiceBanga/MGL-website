@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Search, Filter, Users, AlertTriangle, X, Check, Home, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Link } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Team {
   id: string;
@@ -24,7 +25,11 @@ function AdminTeams() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCaptainModal, setShowCaptainModal] = useState(false);
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [selectedCaptainId, setSelectedCaptainId] = useState<string>('');
+  const [changingCaptain, setChangingCaptain] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -183,6 +188,123 @@ function AdminTeams() {
       setShowDeleteModal(false);
     } catch (error) {
       console.error('Error deleting team:', error);
+    }
+  };
+
+  const handleCaptainClick = async (team: Team) => {
+    setCurrentTeam(team);
+    setSelectedCaptainId('');
+    setChangingCaptain(false);
+    
+    try {
+      // Fetch team members
+      const { data, error } = await supabase
+        .from('team_players')
+        .select(`
+          user_id,
+          players:user_id (
+            id,
+            display_name,
+            email
+          )
+        `)
+        .eq('team_id', team.id);
+        
+      if (error) throw error;
+      
+      setTeamMembers(data || []);
+      setShowCaptainModal(true);
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+    }
+  };
+  
+  const handleChangeCaptain = async () => {
+    if (!currentTeam || !selectedCaptainId) return;
+    
+    try {
+      setChangingCaptain(true);
+      console.log('Changing captain for team:', currentTeam.id);
+      console.log('Old captain ID:', currentTeam.captain_id);
+      console.log('New captain ID:', selectedCaptainId);
+      
+      // Update team captain
+      const { error: updateTeamError } = await supabase
+        .from('teams')
+        .update({ captain_id: selectedCaptainId })
+        .eq('id', currentTeam.id);
+        
+      if (updateTeamError) {
+        console.error('Error updating team captain:', updateTeamError);
+        throw updateTeamError;
+      }
+      
+      // Update old captain's role
+      const { error: updateOldCaptainError } = await supabase
+        .from('team_players')
+        .update({ 
+          role: 'player',
+          can_be_deleted: true 
+        })
+        .eq('team_id', currentTeam.id)
+        .eq('user_id', currentTeam.captain_id);
+        
+      if (updateOldCaptainError) {
+        console.error('Error updating old captain role:', updateOldCaptainError);
+        throw updateOldCaptainError;
+      }
+      
+      // Update new captain's role
+      const { error: updateNewCaptainError } = await supabase
+        .from('team_players')
+        .update({ 
+          role: 'captain',
+          can_be_deleted: false 
+        })
+        .eq('team_id', currentTeam.id)
+        .eq('user_id', selectedCaptainId);
+        
+      if (updateNewCaptainError) {
+        console.error('Error updating new captain role:', updateNewCaptainError);
+        throw updateNewCaptainError;
+      }
+      
+      // Create a team change request record for audit
+      const requestId = uuidv4();
+      const { error: createRequestError } = await supabase
+        .from('team_change_requests')
+        .insert({
+          id: requestId,
+          team_id: currentTeam.id,
+          request_type: 'team_transfer',
+          requested_by: 'owner', // Indicate this was done by an owner
+          player_id: selectedCaptainId,
+          old_value: currentTeam.captain_id,
+          new_value: selectedCaptainId,
+          status: 'approved',
+          payment_id: null, // No payment for owner actions
+          item_id: null,
+          metadata: {
+            teamName: currentTeam.name,
+            oldCaptainId: currentTeam.captain_id,
+            newCaptainId: selectedCaptainId,
+            changedByOwner: true,
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+      if (createRequestError) {
+        console.error('Error creating team change request:', createRequestError);
+        // Continue even if audit record fails
+      }
+      
+      // Refresh team list
+      await fetchTeams();
+      setShowCaptainModal(false);
+    } catch (error) {
+      console.error('Error changing team captain:', error);
+    } finally {
+      setChangingCaptain(false);
     }
   };
 
@@ -355,14 +477,23 @@ function AdminTeams() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
+                        onClick={() => handleCaptainClick(team)}
+                        className="text-blue-500 hover:text-blue-400 mr-3"
+                        title="Change Captain"
+                      >
+                        <Users className="w-5 h-5" />
+                      </button>
+                      <button
                         onClick={() => handleEditClick(team)}
                         className="text-green-500 hover:text-green-400 mr-3"
+                        title="Edit Team"
                       >
                         <Edit className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(team)}
                         className="text-red-500 hover:text-red-400"
+                        title="Delete Team"
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
@@ -473,6 +604,97 @@ function AdminTeams() {
                   Delete
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Captain Modal */}
+      {showCaptainModal && currentTeam && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-white">Change Team Captain</h3>
+              <button
+                onClick={() => setShowCaptainModal(false)}
+                className="text-gray-400 hover:text-white"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <p className="text-gray-300 mb-2">
+                Current captain: <span className="text-white font-medium">{currentTeam.captain_name}</span>
+              </p>
+              <p className="text-gray-300 mb-4">
+                Select a new team captain from the list below:
+              </p>
+              
+              {teamMembers.length === 0 ? (
+                <p className="text-gray-400 text-center py-4">No team members found</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {teamMembers.map((member) => (
+                    <div 
+                      key={member.user_id} 
+                      className={`flex items-center p-2 rounded ${
+                        member.user_id === currentTeam.captain_id 
+                          ? 'bg-green-900/20 border border-green-500' 
+                          : selectedCaptainId === member.user_id
+                          ? 'bg-blue-900/20 border border-blue-500'
+                          : 'bg-gray-700 hover:bg-gray-600 cursor-pointer'
+                      }`}
+                      onClick={() => {
+                        if (member.user_id !== currentTeam.captain_id) {
+                          setSelectedCaptainId(member.user_id);
+                        }
+                      }}
+                    >
+                      <div className="flex-1">
+                        <p className="text-white font-medium">
+                          {member.players?.display_name || member.user_id}
+                        </p>
+                        <p className="text-gray-400 text-sm">
+                          {member.players?.email || 'No email'}
+                        </p>
+                      </div>
+                      {member.user_id === currentTeam.captain_id && (
+                        <span className="text-green-500 text-xs font-medium px-2 py-1 bg-green-500/10 rounded">
+                          Current Captain
+                        </span>
+                      )}
+                      {selectedCaptainId === member.user_id && member.user_id !== currentTeam.captain_id && (
+                        <span className="text-blue-500 text-xs font-medium px-2 py-1 bg-blue-500/10 rounded">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowCaptainModal(false)}
+                className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleChangeCaptain}
+                disabled={!selectedCaptainId || selectedCaptainId === currentTeam.captain_id || changingCaptain}
+                className="px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {changingCaptain ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Changing...
+                  </>
+                ) : (
+                  'Change Captain'
+                )}
+              </button>
             </div>
           </div>
         </div>

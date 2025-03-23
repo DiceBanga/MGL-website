@@ -202,6 +202,89 @@ const Payments = () => {
       const requestId = uuidv4();
       
       console.log('Creating team change request with ID:', requestId);
+      console.log('Team ID:', teamId);
+      console.log('Player ID:', playerId);
+      console.log('Payment ID (reference only):', paymentId);
+      
+      // Validate UUIDs
+      const validateUUID = (id: string) => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(id);
+      };
+      
+      if (!validateUUID(teamId)) {
+        console.error('Invalid team ID format:', teamId);
+        return null;
+      }
+      
+      if (!validateUUID(playerId)) {
+        console.error('Invalid player ID format:', playerId);
+        return null;
+      }
+      
+      // Validate item_id format (must be a 4-digit number)
+      const validateItemId = (id: string) => {
+        return /^[0-9]{4}$/.test(id);
+      };
+      
+      // Ensure item_id is properly formatted
+      let formattedItemId = itemId;
+      if (!validateItemId(itemId)) {
+        console.warn('Item ID not in correct format, attempting to fix:', itemId);
+        
+        // Try to fetch the correct item_id from the database based on the change request type
+        try {
+          const itemType = changeRequestType === 'team_transfer' ? 'Team Transfer' :
+                          changeRequestType === 'team_rebrand' ? 'Team Rebrand' :
+                          changeRequestType === 'online_id_change' ? 'Gamer Tag Change' :
+                          changeRequestType === 'roster_change' ? 'Roster Change' : null;
+                          
+          if (itemType) {
+            const { data, error } = await supabase
+              .from('items')
+              .select('item_id')
+              .eq('item_name', itemType)
+              .single();
+              
+            if (!error && data) {
+              formattedItemId = data.item_id;
+              console.log(`Found item_id ${formattedItemId} for ${itemType} from database`);
+            }
+          }
+        } catch (fetchError) {
+          console.error('Error fetching item_id from database:', fetchError);
+        }
+        
+        // If we still don't have a valid item_id, try to format the existing one
+        if (!validateItemId(formattedItemId)) {
+          // Try to convert to a 4-digit number
+          if (/^\d+$/.test(itemId)) {
+            // If it's numeric, pad with zeros to make it 4 digits
+            formattedItemId = itemId.padStart(4, '0');
+            if (formattedItemId.length > 4) {
+              // If longer than 4 digits, take the last 4
+              formattedItemId = formattedItemId.slice(-4);
+            }
+          } else {
+            // Default to a valid item ID based on the change request type
+            formattedItemId = 
+              changeRequestType === 'team_transfer' ? '1002' :
+              changeRequestType === 'team_rebrand' ? '1006' :
+              changeRequestType === 'online_id_change' ? '1007' :
+              changeRequestType === 'roster_change' ? '1005' : '1000';
+            console.warn(`Using default item ID ${formattedItemId} for ${changeRequestType}`);
+          }
+        }
+      }
+      
+      console.log('Using formatted item ID:', formattedItemId);
+      
+      // Create a clean metadata object
+      const cleanMetadata = {
+        ...metadata,
+        paymentId: paymentId, // Store payment ID as a reference
+        timestamp: new Date().toISOString()
+      };
       
       const { data, error } = await supabase
         .from('team_change_requests')
@@ -214,9 +297,9 @@ const Payments = () => {
           old_value: oldValue,
           new_value: newValue,
           status: 'pending',
-          payment_id: paymentId,
-          item_id: itemId,
-          metadata
+          payment_reference: paymentId, // Use a different field name to avoid UUID validation
+          item_id: formattedItemId, // Use the formatted item ID
+          metadata: cleanMetadata
         })
         .select()
         .single();

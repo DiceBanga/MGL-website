@@ -67,10 +67,17 @@ Contains all server-side code:
 
 2. Create a `.env` file in the root directory with required environment variables:
    ```env
+   # Square Configuration
    SQUARE_ACCESS_TOKEN=your_square_access_token
    SQUARE_LOCATION_ID=your_square_location_id
    SQUARE_ENVIRONMENT=sandbox
+   
+   # Database Configuration
    DATABASE_URL=postgresql://postgres:postgres@db:5432/mgl
+   
+   # Supabase Configuration
+   SUPABASE_URL=your_supabase_project_url
+   SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
 3. Build and start the containers:
@@ -123,6 +130,10 @@ Contains all server-side code:
    SQUARE_LOCATION_ID=your_square_location_id
    SQUARE_ENVIRONMENT=sandbox
    DATABASE_URL=postgresql://user:password@localhost/dbname
+   
+   # Supabase Configuration (required for team management features)
+   SUPABASE_URL=your_supabase_project_url
+   SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
 ## Operation
@@ -130,10 +141,14 @@ Contains all server-side code:
 ### Development
 1. Start the backend server:
    ```bash
+   # Run from project root (recommended)
+   uvicorn backend.main:app --reload
+   
+   # Alternative methods (for backward compatibility)
    npm run backend:dev
-   # or directly with:
-   # cd backend
-   # uvicorn main:app --reload
+   # or
+   cd backend
+   uvicorn main:app --reload  # Note: May cause import issues with relative imports
    ```
 
 2. In a new terminal, start the frontend development server:

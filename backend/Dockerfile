@@ -19,8 +19,11 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
-COPY . .
+# Copy backend code to backend directory
+COPY . /app/backend/
+
+# Add app directory to PYTHONPATH
+ENV PYTHONPATH=/app:$PYTHONPATH
 
 # Create directory for test results if needed
 RUN mkdir -p /app/test-results
@@ -29,4 +32,4 @@ RUN mkdir -p /app/test-results
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"] 

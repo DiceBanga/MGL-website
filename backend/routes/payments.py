@@ -1,17 +1,24 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+import logging
 import uuid
+import json
+import os
+from datetime import datetime
 
-# Create a router without prefix for clearer debugging
+# Import the payment service
+from ..services.payment_service import PaymentService
+from ..dependencies import get_request_service
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class PaymentRequest(BaseModel):
     sourceId: str
     amount: float
-    idempotencyKey: Optional[str] = None
-    note: Optional[str] = None
-    referenceId: Optional[str] = None
+    idempotencyKey: str = None
+    note: str = None
+    referenceId: str = None
 
 @router.post("/payments")
 async def create_payment(request: PaymentRequest):
@@ -62,4 +69,44 @@ async def create_payment(request: PaymentRequest):
                 "message": "Payment processing failed",
                 "error": str(e)
             }
-        ) 
+        )
+
+@router.post("/payments/test")
+async def test_payment(payment: PaymentRequest):
+    """Test endpoint that simulates payment processing without making real API calls"""
+    logger.info("=========== TEST PAYMENT REQUEST ===========")
+    logger.info(f"Payment source ID: {payment.sourceId}")
+    logger.info(f"Amount: {payment.amount}")
+    logger.info(f"Idempotency key: {payment.idempotencyKey}")
+    logger.info(f"Note: {payment.note}")
+    logger.info(f"Reference ID: {payment.referenceId}")
+    logger.info("============================================")
+    
+    # Return mock success response
+    return {
+        "success": True,
+        "message": "Test payment processed successfully",
+        "payment": {
+            "id": f"test-{payment.idempotencyKey or uuid.uuid4()}",
+            "created_at": datetime.now().isoformat(),
+            "status": "APPROVED",
+            "amount_money": {
+                "amount": int(payment.amount * 100),
+                "currency": "USD"
+            },
+            "card_details": {
+                "card": {
+                    "last_4": "1111",
+                    "card_brand": "VISA",
+                    "exp_month": 12,
+                    "exp_year": 2025
+                }
+            }
+        }
+    }
+
+@router.post("/payments/process")
+async def payments_process(request: PaymentRequest):
+    """Legacy process endpoint - redirects to main /api/payments endpoint"""
+    logger.warning("Deprecated /api/payments/process endpoint accessed, please use /api/payments instead")
+    return await create_payment(request) 

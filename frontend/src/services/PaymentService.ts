@@ -111,17 +111,28 @@ export class PaymentService {
    * Create a pending payment record in the database
    */
   private async createPendingPaymentRecord(paymentDetails: PaymentDetails) {
-    const metadata: PaymentMetadata = {
+    // Create base metadata with required fields
+    const baseMetadata: PaymentMetadata = {
       type: paymentDetails.type,
       eventId: paymentDetails.eventId,
       teamId: paymentDetails.teamId,
-      playersIds: paymentDetails.playersIds,
+      playersIds: paymentDetails.playersIds || [],
       playerId: paymentDetails.playerId,
-      request_id: paymentDetails.request_id
+      request_id: paymentDetails.request_id,
+      item_id: paymentDetails.item_id,
+      captainId: paymentDetails.captainId,
     };
     
+    // Merge with custom metadata, ensuring base fields take precedence
+    const metadata = {
+      ...paymentDetails.metadata,  // Custom metadata (lower precedence)
+      ...baseMetadata,             // Required fields (higher precedence)
+    };
+    
+    const paymentId = paymentDetails.id || uuidv4();
+    
     const paymentRecord: Partial<DbPayment> = {
-      id: paymentDetails.id,
+      id: paymentId,
       user_id: paymentDetails.captainId || '',
       amount: paymentDetails.amount,
       currency: 'USD',
@@ -133,6 +144,8 @@ export class PaymentService {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    
+    console.log('Creating pending payment record:', paymentRecord);
     
     return await supabase
       .from('payments')

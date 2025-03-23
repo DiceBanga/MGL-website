@@ -7,6 +7,7 @@ import { DbTeam, DbTeamMember } from '../../types/database';
 import { createPaymentDetails } from '../../utils/paymentUtils';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 import { v4 as uuidv4 } from 'uuid';
+import TeamActionProcessor from '../../components/TeamActionProcessor';
 
 // UI-specific interface that matches the team_players table structure
 interface TeamMemberUI {
@@ -44,12 +45,17 @@ const TeamDashboard = () => {
   const [newOnlineId, setNewOnlineId] = useState('');
   const [isEditingOnlineId, setIsEditingOnlineId] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [isCaptain, setIsCaptain] = useState(false);
+  const [leagueRosters, setLeagueRosters] = useState<any[]>([]);
+  const [tournamentRosters, setTournamentRosters] = useState<any[]>([]);
+  const [userOnRoster, setUserOnRoster] = useState(false);
   
   // Front Office state
   const [showFrontOffice, setShowFrontOffice] = useState(true);
   const [availableTournaments, setAvailableTournaments] = useState<any[]>([]);
   const [availableLeagues, setAvailableLeagues] = useState<any[]>([]);
   const [itemPrices, setItemPrices] = useState<{[key: string]: number}>({});
+  const [itemIds, setItemIds] = useState<{[key: string]: string}>({});
   
   // Confirmation dialog states
   const [showOnlineIdConfirmation, setShowOnlineIdConfirmation] = useState(false);
@@ -64,6 +70,14 @@ const TeamDashboard = () => {
   // Add new state for player signing confirmation
   const [showPlayerSigningConfirmation, setShowPlayerSigningConfirmation] = useState(false);
 
+  // Action processor states
+  const [showTeamRebrandProcessor, setShowTeamRebrandProcessor] = useState(false);
+  const [showOnlineIdProcessor, setShowOnlineIdProcessor] = useState(false);
+  const [showLeagueRegistrationProcessor, setShowLeagueRegistrationProcessor] = useState(false);
+  const [showTournamentRegistrationProcessor, setShowTournamentRegistrationProcessor] = useState(false);
+  const [showRosterChangeProcessor, setShowRosterChangeProcessor] = useState(false);
+  const [showTeamTransferProcessor, setShowTeamTransferProcessor] = useState(false);
+
   useEffect(() => {
     if (user) {
       fetchTeamData();
@@ -73,111 +87,86 @@ const TeamDashboard = () => {
   }, [user]);
 
   const fetchTeamData = async () => {
-    if (!user) return;
-
     try {
       setLoading(true);
       setError(null);
 
-      // First, get the team the user is a captain of
+      // Parse UUID from URL
+      const urlPathSegments = window.location.pathname.split('/');
+      const teamIdIndex = urlPathSegments.findIndex(segment => segment === 'team') + 1;
+      const teamIdFromUrl = teamIdIndex < urlPathSegments.length ? urlPathSegments[teamIdIndex] : null;
+      
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!teamIdFromUrl || !uuidRegex.test(teamIdFromUrl)) {
+        console.error('Invalid team ID in URL:', teamIdFromUrl);
+        setError('Invalid team ID');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Fetching team data for ID:', teamIdFromUrl);
+
+      // Query to fetch team with the given ID
       const { data: teamData, error: teamError } = await supabase
         .from('teams')
-        .select('*')
-        .eq('captain_id', user.id)
+        .select('*, captain:captain_id(id, user_name, email)')
+        .eq('id', teamIdFromUrl)
         .single();
 
       if (teamError) {
-        if (teamError.code === 'PGRST116') {
-          setError('You are not a captain of any team.');
-        } else {
-          setError(teamError.message);
-        }
+        console.error('Error fetching team data:', teamError);
+        setError(teamError.message);
         setLoading(false);
         return;
       }
 
-      // Then, get all members of the team
-      const { data: membersData, error: membersError } = await supabase
-        .from('team_players')
-        .select('*')
+      if (!teamData) {
+        console.log('No team found with ID:', teamIdFromUrl);
+        setLoading(false);
+        return;
+      }
+
+      // Set whether the current user is the team captain
+      const isCaptainUser = teamData.captain_id === user?.id;
+      setIsCaptain(isCaptainUser);
+
+      // Fetch all members of the team - this includes league roster
+      const { data: leagueRosterData, error: leagueRosterError } = await supabase
+        .from('league_roster')
+        .select('*, user:user_id(id, user_name, email)')
         .eq('team_id', teamData.id);
 
-      if (membersError) {
-        setError(membersError.message);
-        setLoading(false);
-        return;
-      }
-      
-      // Fetch user details separately if needed
-      const userIds = membersData.map((member: any) => member.user_id);
-      let userData: any[] = [];
-      
-      if (userIds.length > 0) {
-        // Fetch from players table
-        const { data: players, error: playersError } = await supabase
-          .from('players')
-          .select('user_id, display_name, email, avatar_url')
-          .in('user_id', userIds);
-          
-        if (playersError) {
-          console.error('Error fetching player data:', playersError);
-          console.warn('Unable to fetch player details. Some player information may be missing.');
-        } else if (players) {
-          // Map player data to match user interface
-          userData = players.map(player => ({
-            id: player.user_id,
-            username: player.display_name,
-            email: player.email,
-            avatar_url: player.avatar_url
-          }));
-        }
-        
-        // Fetch online IDs from league_roster table if needed
-        try {
-          const { data: leagueRosters, error: leagueRostersError } = await supabase
-            .from('league_roster')
-            .select('player_id, online_id')
-            .in('player_id', userIds);
-            
-          if (!leagueRostersError && leagueRosters && leagueRosters.length > 0) {
-            // Add online_id to userData
-            userData = userData.map(user => {
-              const roster = leagueRosters.find(r => r.player_id === user.id);
-              return {
-                ...user,
-                online_id: roster?.online_id || null
-              };
-            });
-          }
-        } catch (err) {
-          console.warn('Unable to fetch online IDs from league_roster:', err);
-        }
+      if (leagueRosterError) {
+        console.error('Error fetching league roster:', leagueRosterError);
+        setError(leagueRosterError.message);
       }
 
-      // Transform the data to match our UI interface
-      const teamWithMembers: TeamUI = {
-        ...teamData,
-        members: membersData.map((member: any) => {
-          const userInfo = userData.find(u => u.id === member.user_id);
-          return {
-            ...member,
-            id: member.user_id, // Use user_id as the id property since team_players doesn't have an id field
-            user: userInfo || {
-              id: member.user_id,
-              username: `Player ${member.user_id.substring(0, 8)}`,
-              email: '',
-              avatar_url: null
-            }
-          };
-        })
-      };
+      // Fetch tournament roster
+      const { data: tournamentRosterData, error: tournamentRosterError } = await supabase
+        .from('tournament_roster')
+        .select('*, user:user_id(id, user_name, email)')
+        .eq('team_id', teamData.id);
 
-      setTeam(teamWithMembers);
+      if (tournamentRosterError) {
+        console.error('Error fetching tournament roster:', tournamentRosterError);
+        setError(tournamentRosterError.message);
+      }
+
+      // Check if user is on any roster
+      const userOnAnyRoster = 
+        (leagueRosterData && leagueRosterData.some(player => player.user_id === user?.id)) || 
+        (tournamentRosterData && tournamentRosterData.some(player => player.user_id === user?.id));
+      
+      setUserOnRoster(userOnAnyRoster || false);
+      setLeagueRosters(leagueRosterData || []);
+      setTournamentRosters(tournamentRosterData || []);
+      setTeam(teamData);
       setNewTeamName(teamData.name);
-    } catch (err) {
+      setLoading(false);
+    } catch (error) {
+      console.error('Error in fetchTeamData:', error);
       setError('An unexpected error occurred');
-      console.error(err);
-    } finally {
       setLoading(false);
     }
   };
@@ -218,15 +207,33 @@ const TeamDashboard = () => {
     try {
       const { data, error } = await supabase
         .from('items')
-        .select('item_id, current_price, item_name')
-        .in('item_id', ['1001', '1002', '1003', '1004', '1005', '1006', '1007']); // All relevant items
+        .select('id, item_id, current_price, item_name')
+        .in('item_name', [
+          'Team Creation', 
+          'Team Transfer', 
+          'Tournament Registration', 
+          'League Registration', 
+          'Roster Change', 
+          'Team Rebrand', 
+          'Gamer Tag Change'
+        ]); 
         
       if (!error && data) {
         const prices: {[key: string]: number} = {};
+        const ids: {[key: string]: string} = {};
+        
         data.forEach(item => {
+          // Store by item name for easier reference
+          prices[item.item_name] = item.current_price;
+          ids[item.item_name] = item.item_id;
+          
+          // Also store by item_id for backward compatibility
           prices[item.item_id] = item.current_price;
         });
+        
         setItemPrices(prices);
+        setItemIds(ids);
+        console.log('Fetched item data:', data);
       } else {
         console.error('Error fetching item prices:', error);
       }
@@ -289,7 +296,51 @@ const TeamDashboard = () => {
   };
 
   const handleEditTeamName = () => {
-    setIsEditingName(true);
+    // Show the team rebrand processor instead of setting isEditingName
+    setShowTeamRebrandProcessor(true);
+  };
+
+  // Handle success from team rebrand request
+  const handleRebrandSuccess = (response: any) => {
+    console.log('Team rebrand successful:', response);
+    setShowTeamRebrandProcessor(false);
+    // Refresh team data to show the updated name
+    fetchTeamData();
+  };
+
+  // Handle cancellation of team rebrand
+  const handleRebrandCancel = () => {
+    setShowTeamRebrandProcessor(false);
+  };
+
+  const handleEditOnlineId = (playerId: string) => {
+    // Set the selected player ID and show the online ID processor
+    setSelectedPlayerId(playerId);
+    
+    // Find the player's current online_id
+    const player = team?.members.find(member => member.user_id === playerId);
+    if (player) {
+      // Get online_id from the user object
+      const onlineId = player.user?.online_id || '';
+      setNewOnlineId(onlineId);
+    }
+    
+    setShowOnlineIdProcessor(true);
+  };
+
+  // Handle success from online ID change request
+  const handleOnlineIdSuccess = (response: any) => {
+    console.log('Online ID change successful:', response);
+    setShowOnlineIdProcessor(false);
+    setSelectedPlayerId(null);
+    // Refresh team data to show the updated online ID
+    fetchTeamData();
+  };
+
+  // Handle cancellation of online ID change
+  const handleOnlineIdCancel = () => {
+    setShowOnlineIdProcessor(false);
+    setSelectedPlayerId(null);
   };
 
   const handleSaveTeamName = async () => {
@@ -317,10 +368,14 @@ const TeamDashboard = () => {
       setProcessingPayment(true);
       
       // Get the price from the itemPrices state
-      const price = itemPrices['1006'] || 20.00; // Default to 20.00 if not found
+      const price = itemPrices['Team Rebrand'] || 20.00; // Default to 20.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
+      
+      // Get the item_id from the database
+      const itemId = itemIds['Team Rebrand'] || '1006'; // Use the fetched item_id or default to '1006'
+      console.log('Using item ID from database for team rebrand:', itemId);
       
       // Create payment details for team rebranding
       const paymentDetails = createPaymentDetails(
@@ -331,7 +386,7 @@ const TeamDashboard = () => {
         {
           teamId: team.id,
           captainId: user.id,
-          item_id: '1006', // Item ID for team rebranding
+          item_id: itemId,
           request_id: requestId
         }
       );
@@ -346,7 +401,7 @@ const TeamDashboard = () => {
         changeRequestData: {
           teamId: team.id,
           requestedBy: user.id,
-          itemId: '1006',
+          itemId: itemId,
           oldValue: team.name,
           newValue: newTeamName,
           metadata: {
@@ -369,20 +424,6 @@ const TeamDashboard = () => {
       setProcessingPayment(false);
       setShowRebrandConfirmation(false);
     }
-  };
-
-  const handleEditOnlineId = (playerId: string) => {
-    setSelectedPlayerId(playerId);
-    
-    // Find the player's current online_id
-    const player = team?.members.find(member => member.user_id === playerId);
-    if (player) {
-      // Get online_id from the user object
-      const onlineId = player.user?.online_id || '';
-      setNewOnlineId(onlineId);
-    }
-    
-    setIsEditingOnlineId(true);
   };
 
   const handleSaveOnlineId = async () => {
@@ -418,10 +459,14 @@ const TeamDashboard = () => {
       const currentOnlineId = player.user?.online_id || 'None';
       
       // Get the price from the itemPrices state
-      const price = itemPrices['1007'] || 5.00; // Default to 5.00 if not found
+      const price = itemPrices['Gamer Tag Change'] || 5.00; // Default to 5.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
+      
+      // Get the item_id from the database
+      const itemId = itemIds['Gamer Tag Change'] || '1007'; // Use the fetched item_id or default to '1007'
+      console.log('Using item ID from database for online ID change:', itemId);
       
       // Create payment details for online ID change
       const paymentDetails = createPaymentDetails(
@@ -433,7 +478,7 @@ const TeamDashboard = () => {
           teamId: team.id,
           captainId: user.id,
           playerId: selectedPlayerId,
-          item_id: '1007', // Item ID for online ID change
+          item_id: itemId,
           request_id: requestId
         }
       );
@@ -450,7 +495,7 @@ const TeamDashboard = () => {
         changeRequestData: {
           teamId: team.id,
           requestedBy: user.id,
-          itemId: '1007',
+          itemId: itemId,
           playerId: selectedPlayerId,
           oldValue: currentOnlineId,
           newValue: newOnlineId,
@@ -512,6 +557,10 @@ const TeamDashboard = () => {
       // Generate a unique request ID
       const requestId = uuidv4();
       
+      // Get the item_id from the database
+      const itemId = itemIds['Tournament Registration'] || '1003'; // Use the fetched item_id or default to '1003'
+      console.log('Using item ID from database for tournament registration:', itemId);
+      
       // Create payment details for tournament registration
       const paymentDetails = createPaymentDetails(
         'tournament',
@@ -522,7 +571,7 @@ const TeamDashboard = () => {
           teamId: team.id,
           captainId: user.id,
           eventId: tournamentId,
-          item_id: '1003', // Item ID for tournament registration
+          item_id: itemId,
           playersIds: team.members.map(member => member.user_id), // Include all team members
           request_id: requestId
         }
@@ -558,6 +607,10 @@ const TeamDashboard = () => {
       // Generate a unique request ID
       const requestId = uuidv4();
       
+      // Get the item_id from the database
+      const itemId = itemIds['League Registration'] || '1004'; // Use the fetched item_id or default to '1004'
+      console.log('Using item ID from database for league registration:', itemId);
+      
       // Create payment details for league registration
       const paymentDetails = createPaymentDetails(
         'league',
@@ -568,7 +621,7 @@ const TeamDashboard = () => {
           teamId: team.id,
           captainId: user.id,
           eventId: leagueId,
-          item_id: '1004', // Item ID for league registration
+          item_id: itemId,
           playersIds: team.members.map(member => member.user_id), // Include all team members
           request_id: requestId
         }
@@ -601,11 +654,23 @@ const TeamDashboard = () => {
     if (!team || !user) return;
     
     try {
+      console.log('Starting team transfer process with the following data:');
+      console.log('Team ID (UUID):', team.id);
+      console.log('Current Captain ID (UUID):', user.id);
+      console.log('New Captain ID (UUID):', newCaptainId);
+      console.log('Team Name:', team.name);
+      console.log('New Captain Name:', newCaptainName);
+      
       // Get the price from the itemPrices state
-      const price = itemPrices['1002'] || 15.00; // Default to 15.00 if not found
+      const price = itemPrices['Team Transfer'] || 15.00; // Default to 15.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
+      console.log('Generated Request ID:', requestId);
+      
+      // Get the item_id from the database
+      const itemId = itemIds['Team Transfer'] || '1002'; // Use the fetched item_id or default to '1002'
+      console.log('Using item ID from database:', itemId);
       
       // Create payment details for team transfer
       const paymentDetails = createPaymentDetails(
@@ -617,10 +682,12 @@ const TeamDashboard = () => {
           teamId: team.id,
           captainId: user.id,
           playerId: newCaptainId,
-          item_id: '1002', // Item ID for team transfer
+          item_id: itemId,
           request_id: requestId
         }
       );
+      
+      console.log('Created payment details:', paymentDetails);
       
       // Add metadata for the team change request
       paymentDetails.metadata = {
@@ -635,7 +702,7 @@ const TeamDashboard = () => {
         changeRequestData: {
           teamId: team.id,
           requestedBy: user.id,
-          itemId: '1002',
+          itemId: itemId,
           playerId: newCaptainId,
           oldValue: user.id,
           newValue: newCaptainId,
@@ -647,6 +714,8 @@ const TeamDashboard = () => {
         }
       };
       
+      console.log('Final payment details with metadata:', JSON.stringify(paymentDetails, null, 2));
+      
       // Navigate to the payment page with the payment details
       navigate('/payments', { 
         state: { 
@@ -656,7 +725,7 @@ const TeamDashboard = () => {
         }
       });
     } catch (err) {
-      console.error(err);
+      console.error('Error in handleTransferOwnership:', err);
       setError('Failed to process team transfer');
     }
   };
@@ -680,10 +749,14 @@ const TeamDashboard = () => {
       setProcessingPayment(true);
       
       // Get the price from the itemPrices state
-      const price = itemPrices['1005'] || 10.00; // Default to 10.00 if not found - using Roster Change item
+      const price = itemPrices['Roster Change'] || 10.00; // Default to 10.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
+      
+      // Get the item_id from the database
+      const itemId = itemIds['Roster Change'] || '1005'; // Use the fetched item_id or default to '1005'
+      console.log('Using item ID from database for player signing:', itemId);
       
       // Create payment details for player signing
       const paymentDetails = createPaymentDetails(
@@ -694,7 +767,7 @@ const TeamDashboard = () => {
         {
           teamId: team.id,
           captainId: user.id,
-          item_id: '1005', // Item ID for roster change
+          item_id: itemId,
           request_id: requestId,
           playersIds: [] // Empty array since we don't have player IDs yet
         }
@@ -710,7 +783,7 @@ const TeamDashboard = () => {
         changeRequestData: {
           teamId: team.id,
           requestedBy: user.id,
-          itemId: '1005',
+          itemId: itemId,
           oldValue: '',
           newValue: playerEmail,
           metadata: {
@@ -736,27 +809,156 @@ const TeamDashboard = () => {
     }
   };
 
+  // Team Actions Section
+  const renderTeamActions = () => {
+    if (!team) return null;
+
+    return (
+      <div className="card bg-base-200 shadow-xl mb-6">
+        <div className="card-body">
+          <h2 className="card-title flex justify-between">
+            <span>Team Actions</span>
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            {/* Team Rename Button */}
+            <button 
+              className="btn btn-primary flex items-center justify-start" 
+              onClick={handleEditTeamName}
+            >
+              <Paintbrush className="w-5 h-5 mr-2" />
+              <span>Rename Team</span>
+            </button>
+            
+            {/* Transfer Ownership Button */}
+            <button 
+              className="btn btn-secondary flex items-center justify-start"
+              onClick={() => alert('Transfer ownership not implemented in this view')}
+            >
+              <UserCog className="w-5 h-5 mr-2" />
+              <span>Transfer Ownership</span>
+            </button>
+
+            {/* Add More Team Actions Here */}
+          </div>
+          
+          {/* TeamActionProcessor integration - will be shown when an action is selected */}
+          {showTeamRebrandProcessor && (
+            <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+              <TeamActionProcessor
+                actionType="team_rebrand"
+                teamId={team.id}
+                userId={user?.id || ''}
+                initialValue={team.name}
+                onSuccess={handleRebrandSuccess}
+                onCancel={handleRebrandCancel}
+                onError={setError}
+                requiresPayment={true}
+                paymentAmount={itemPrices['Team Rebrand'] || 20.00}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render online ID change processor when needed
+  const renderOnlineIdProcessor = () => {
+    if (!showOnlineIdProcessor || !selectedPlayerId) return null;
+    
+    const player = team?.members.find(member => member.user_id === selectedPlayerId);
+    if (!player) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-base-200 rounded-lg shadow-lg max-w-md w-full mx-4">
+          <div className="p-4">
+            <h2 className="text-xl font-bold mb-4">Change Online ID for {player.user?.username}</h2>
+            
+            <TeamActionProcessor
+              actionType="online_id_change"
+              teamId={team?.id || ''}
+              userId={user?.id || ''}
+              initialValue={player.user?.online_id || ''}
+              onSuccess={handleOnlineIdSuccess}
+              onCancel={handleOnlineIdCancel}
+              onError={setError}
+              requiresPayment={true}
+              paymentAmount={itemPrices['Gamer Tag Change'] || 5.00}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Handle success from league registration
+  const handleLeagueRegistrationSuccess = (response: any) => {
+    console.log('League registration successful:', response);
+    setShowLeagueRegistrationProcessor(false);
+    // Refresh team data to show the updated rosters
+    fetchTeamData();
+  };
+
+  // Handle cancellation of league registration
+  const handleLeagueRegistrationCancel = () => {
+    setShowLeagueRegistrationProcessor(false);
+  };
+
+  // Handle success from tournament registration
+  const handleTournamentRegistrationSuccess = (response: any) => {
+    console.log('Tournament registration successful:', response);
+    setShowTournamentRegistrationProcessor(false);
+    // Refresh team data to show the updated rosters
+    fetchTeamData();
+  };
+
+  // Handle cancellation of tournament registration
+  const handleTournamentRegistrationCancel = () => {
+    setShowTournamentRegistrationProcessor(false);
+  };
+
+  // Handle success from roster change
+  const handleRosterChangeSuccess = (response: any) => {
+    console.log('Roster change successful:', response);
+    setShowRosterChangeProcessor(false);
+    // Refresh team data to show the updated roster
+    fetchTeamData();
+  };
+
+  // Handle cancellation of roster change
+  const handleRosterChangeCancel = () => {
+    setShowRosterChangeProcessor(false);
+  };
+  
+  // Handle success from team transfer
+  const handleTeamTransferSuccess = (response: any) => {
+    console.log('Team transfer successful:', response);
+    setShowTeamTransferProcessor(false);
+    // Usually will navigate away since user is no longer captain
+    navigate('/dashboard');
+  };
+
+  // Handle cancellation of team transfer
+  const handleTeamTransferCancel = () => {
+    setShowTeamTransferProcessor(false);
+  };
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-gray-900 min-h-screen p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-red-900/20 border border-red-500 text-red-500 p-4 rounded-lg mb-6">
-            <p>{error}</p>
-          </div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
-          >
-            Back to Dashboard
-          </button>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="bg-red-800 text-white p-4 rounded-lg shadow-lg">
+          <h3 className="text-xl font-bold mb-2">Error</h3>
+          <p>{error}</p>
         </div>
       </div>
     );
@@ -764,520 +966,475 @@ const TeamDashboard = () => {
 
   if (!team) {
     return (
-      <div className="bg-gray-900 min-h-screen p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
-            <h1 className="text-2xl font-bold text-white mb-4">No Team Found</h1>
-            <p className="text-gray-300 mb-4">
-              You are not currently a captain of any team. Would you like to create a new team?
-            </p>
-            <div className="bg-gray-700 p-4 rounded-lg">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center">
-                  <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                    <Users className="w-5 h-5 text-green-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-white font-medium">Team Creation</h3>
-                    <p className="text-gray-400 text-sm">Create a new team and become the captain</p>
-                  </div>
-                </div>
-                <div className="text-green-500 font-medium">
-                  ${itemPrices['1001'] || '25.00'}
-                </div>
-              </div>
-              <button
-                onClick={() => navigate('/dashboard/create-team')}
-                className="mt-2 px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm w-full"
-              >
-                Create Team - ${itemPrices['1001'] || '25.00'}
-              </button>
-            </div>
-            <div className="mt-4">
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
-              >
-                Back to Dashboard
-              </button>
-            </div>
-          </div>
+      <div className="flex items-center justify-center min-h-screen flex-col">
+        <div className="bg-blue-800 text-white p-6 rounded-lg shadow-lg mb-4 max-w-lg w-full">
+          <h3 className="text-xl font-bold mb-4">No Team Found</h3>
+          <p className="mb-4">This team was not found. You may need to create a team or navigate to a valid team page.</p>
+          <button 
+            className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-600"
+            onClick={() => navigate('/create-team')}
+          >
+            Create a Team
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-900 min-h-screen p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-white">Team Dashboard</h1>
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
-            >
-              Back to Dashboard
-            </button>
+    <div className="container mx-auto px-4 py-8">
+      <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              {team.name}
+              {isCaptain && (
+                <button
+                  onClick={handleEditTeamName}
+                  className="ml-2 text-gray-400 hover:text-white"
+                  title="Edit Team Name"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+              )}
+            </h1>
+            <p className="text-gray-400">Team ID: {team.id}</p>
           </div>
+        </div>
 
-          {/* Team Information */}
-          <div className="bg-gray-700 p-4 rounded-lg mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-white">Team Information</h2>
-              <button
-                onClick={fetchTeamData}
-                className="p-2 bg-gray-600 text-gray-300 rounded hover:bg-gray-500 flex items-center"
-                title="Refresh team data"
-              >
-                <RefreshCw size={16} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Non-captain view */}
+        {!isCaptain && (
+          <div>
+            <p className="text-white mb-4">Welcome to the {team.name} page.</p>
+            
+            {/* Show rosters user is part of */}
+            {userOnRoster ? (
               <div>
-                <p className="text-gray-400 text-sm mb-1">Team Name</p>
-                {isEditingName ? (
-                  <div className="flex items-center">
-                    <input
-                      type="text"
-                      value={newTeamName}
-                      onChange={(e) => setNewTeamName(e.target.value)}
-                      className="bg-gray-800 text-white p-2 rounded mr-2 flex-grow"
-                      placeholder="Enter team name"
-                      aria-label="Team name"
-                    />
-                    <button
-                      onClick={handleSaveTeamName}
-                      className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
-                      disabled={processingPayment}
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditingName(false);
-                        setNewTeamName(team.name);
-                      }}
-                      className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 text-sm ml-2"
-                      disabled={processingPayment}
-                    >
-                      Cancel
-                    </button>
+                {leagueRosters.length > 0 && (
+                  <div className="bg-gray-700 p-4 rounded-lg mb-6">
+                    <h2 className="text-xl font-bold text-white mb-4">League Rosters</h2>
+                    <div className="overflow-x-auto">
+                      {/* League roster display */}
+                      <table className="min-w-full bg-gray-800 text-white">
+                        <thead>
+                          <tr className="bg-gray-900">
+                            <th className="py-2 px-4 text-left">League</th>
+                            <th className="py-2 px-4 text-left">Status</th>
+                            <th className="py-2 px-4 text-left">Players</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leagueRosters.map((roster: any) => (
+                            <tr key={roster.id} className="border-t border-gray-700">
+                              <td className="py-2 px-4">{roster.league_name}</td>
+                              <td className="py-2 px-4">{roster.status}</td>
+                              <td className="py-2 px-4">{roster.players?.length || 0} players</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex items-center">
-                    <p className="text-white font-medium">{team.name}</p>
-                    <button
-                      onClick={handleEditTeamName}
-                      className="ml-2 text-gray-400 hover:text-white"
-                      title="Edit team name"
-                    >
-                      <Edit size={16} />
-                    </button>
+                )}
+                
+                {tournamentRosters.length > 0 && (
+                  <div className="bg-gray-700 p-4 rounded-lg mb-6">
+                    <h2 className="text-xl font-bold text-white mb-4">Tournament Rosters</h2>
+                    <div className="overflow-x-auto">
+                      {/* Tournament roster display */}
+                      <table className="min-w-full bg-gray-800 text-white">
+                        <thead>
+                          <tr className="bg-gray-900">
+                            <th className="py-2 px-4 text-left">Tournament</th>
+                            <th className="py-2 px-4 text-left">Status</th>
+                            <th className="py-2 px-4 text-left">Players</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tournamentRosters.map((roster: any) => (
+                            <tr key={roster.id} className="border-t border-gray-700">
+                              <td className="py-2 px-4">{roster.tournament_name}</td>
+                              <td className="py-2 px-4">{roster.status}</td>
+                              <td className="py-2 px-4">{roster.players?.length || 0} players</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Team ID</p>
-                <p className="text-white font-medium">{team.id}</p>
-              </div>
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Created At</p>
-                <p className="text-white font-medium">
-                  {new Date(team.created_at).toLocaleDateString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Captain</p>
-                <p className="text-white font-medium">{user?.email || 'Unknown'}</p>
-              </div>
-            </div>
+            ) : (
+              <p className="text-white">
+                You are not currently on a League or Tournament roster. 
+                Registered rosters you are a part of will appear here.
+              </p>
+            )}
           </div>
+        )}
 
-          {/* Team Roster */}
-          <div className="bg-gray-700 p-4 rounded-lg">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-white">Team Roster</h2>
-              <button
-                onClick={handleAddPlayer}
-                className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 flex items-center text-sm"
-              >
-                <UserPlus size={16} className="mr-1" />
-                Add Player
-              </button>
+        {/* Captain view - entire dashboard */}
+        {isCaptain && (
+          <div>
+            {/* Front Office Section */}
+            <div className="bg-gray-700 p-4 rounded-lg mb-6">
+              <h2 className="text-xl font-bold text-white mb-4">Front Office</h2>
+              <p className="text-gray-300 mb-4">Manage your team's registration, branding, and roster changes.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Team Actions */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-white mb-3">Team Management</h3>
+                  <div className="space-y-2">
+                    <button 
+                      onClick={handleEditTeamName}
+                      className="w-full text-left px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded flex items-center"
+                    >
+                      <Paintbrush className="w-4 h-4 mr-2" />
+                      <span>Rebrand Team (${itemPrices['Team Rebrand'] || 10.00})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Registration Actions */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-white mb-3">Registration</h3>
+                  <div className="space-y-2">
+                    <button 
+                      onClick={() => setShowLeagueRegistrationProcessor(true)}
+                      className="w-full text-left px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded flex items-center"
+                    >
+                      <Trophy className="w-4 h-4 mr-2" />
+                      <span>League Registration (${itemPrices['League Registration'] || 50.00})</span>
+                    </button>
+                    <button 
+                      onClick={() => setShowTournamentRegistrationProcessor(true)}
+                      className="w-full text-left px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded flex items-center"
+                    >
+                      <Trophy className="w-4 h-4 mr-2" />
+                      <span>Tournament Registration (${itemPrices['Tournament Registration'] || 25.00})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Roster Actions */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-white mb-3">Roster Management</h3>
+                  <div className="space-y-2">
+                    <button 
+                      onClick={() => setShowRosterChangeProcessor(true)}
+                      className="w-full text-left px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center"
+                    >
+                      <Users className="w-4 h-4 mr-2" />
+                      <span>Roster Change (${itemPrices['Roster Change'] || 5.00})</span>
+                    </button>
+                    <button 
+                      onClick={() => setShowOnlineIdProcessor(true)}
+                      className="w-full text-left px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      <span>Online ID Change (${itemPrices['Gamer Tag Change'] || 5.00})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Team Transfer */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-white mb-3">Ownership</h3>
+                  <div className="space-y-2">
+                    <button 
+                      onClick={() => setShowTeamTransferProcessor(true)}
+                      className="w-full text-left px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded flex items-center"
+                    >
+                      <UserCog className="w-4 h-4 mr-2" />
+                      <span>Transfer Team (${itemPrices['Team Transfer'] || 15.00})</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* TeamActionProcessor integration - will be shown when an action is selected */}
+              {showTeamRebrandProcessor && (
+                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                  <TeamActionProcessor
+                    actionType="team_rebrand"
+                    teamId={team.id}
+                    userId={user?.id || ''}
+                    initialValue={team.name}
+                    onSuccess={handleRebrandSuccess}
+                    onCancel={handleRebrandCancel}
+                    onError={setError}
+                    requiresPayment={true}
+                    paymentAmount={itemPrices['Team Rebrand'] || 20.00}
+                  />
+                </div>
+              )}
+
+              {showLeagueRegistrationProcessor && (
+                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                  <TeamActionProcessor
+                    actionType="league_registration"
+                    teamId={team.id}
+                    userId={user?.id || ''}
+                    initialValue=""
+                    onSuccess={handleLeagueRegistrationSuccess}
+                    onCancel={handleLeagueRegistrationCancel}
+                    onError={setError}
+                    requiresPayment={true}
+                    paymentAmount={itemPrices['League Registration'] || 50.00}
+                    members={team.members}
+                  />
+                </div>
+              )}
+
+              {showTournamentRegistrationProcessor && (
+                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                  <TeamActionProcessor
+                    actionType="tournament_registration"
+                    teamId={team.id}
+                    userId={user?.id || ''}
+                    initialValue=""
+                    onSuccess={handleTournamentRegistrationSuccess}
+                    onCancel={handleTournamentRegistrationCancel}
+                    onError={setError}
+                    requiresPayment={true}
+                    paymentAmount={itemPrices['Tournament Registration'] || 25.00}
+                    members={team.members}
+                  />
+                </div>
+              )}
+
+              {showRosterChangeProcessor && (
+                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                  <TeamActionProcessor
+                    actionType="roster_change"
+                    teamId={team.id}
+                    userId={user?.id || ''}
+                    initialValue=""
+                    onSuccess={handleRosterChangeSuccess}
+                    onCancel={handleRosterChangeCancel}
+                    onError={setError}
+                    requiresPayment={true}
+                    paymentAmount={itemPrices['Roster Change'] || 5.00}
+                    members={team.members}
+                  />
+                </div>
+              )}
+
+              {showTeamTransferProcessor && (
+                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                  <TeamActionProcessor
+                    actionType="team_transfer"
+                    teamId={team.id}
+                    userId={user?.id || ''}
+                    initialValue=""
+                    onSuccess={handleTeamTransferSuccess}
+                    onCancel={handleTeamTransferCancel}
+                    onError={setError}
+                    requiresPayment={true}
+                    paymentAmount={itemPrices['Team Transfer'] || 15.00}
+                    members={team.members}
+                  />
+                </div>
+              )}
             </div>
 
-            {isEditingOnlineId && (
-              <div className="bg-gray-800 p-4 rounded-lg mb-4">
-                <h3 className="text-white font-medium mb-2">Edit Online ID</h3>
-                <div className="flex items-center">
-                  <input
-                    type="text"
-                    value={newOnlineId}
-                    onChange={(e) => setNewOnlineId(e.target.value)}
-                    className="bg-gray-700 text-white p-2 rounded mr-2 flex-grow"
-                    placeholder="Enter online ID"
-                  />
-                  <button
-                    onClick={handleSaveOnlineId}
-                    className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
-                    disabled={processingPayment}
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditingOnlineId(false);
-                      setSelectedPlayerId(null);
-                    }}
-                    className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 text-sm ml-2"
-                    disabled={processingPayment}
-                  >
-                    Cancel
-                  </button>
+            {/* League Rosters Section */}
+            {leagueRosters.length > 0 && (
+              <div className="bg-gray-700 p-4 rounded-lg mb-6">
+                <h2 className="text-xl font-bold text-white mb-4">League Rosters</h2>
+                {/* League roster display */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-gray-800 text-white">
+                    <thead>
+                      <tr className="bg-gray-900">
+                        <th className="py-2 px-4 text-left">League</th>
+                        <th className="py-2 px-4 text-left">Status</th>
+                        <th className="py-2 px-4 text-left">Players</th>
+                        <th className="py-2 px-4 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leagueRosters.map((roster: any) => (
+                        <tr key={roster.id} className="border-t border-gray-700">
+                          <td className="py-2 px-4">{roster.league_name}</td>
+                          <td className="py-2 px-4">{roster.status}</td>
+                          <td className="py-2 px-4">{roster.players?.length || 0} players</td>
+                          <td className="py-2 px-4">
+                            <button
+                              onClick={() => alert('Manage League Roster')}
+                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
+                            >
+                              Manage
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <p className="text-yellow-500 text-sm mt-2">
-                  <DollarSign size={14} className="inline mr-1" />
-                  Changing online ID requires a $${itemPrices['1007'] || '5.00'} fee
-                </p>
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-gray-800 rounded-lg">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-2 text-left text-gray-400 text-sm">Player</th>
-                    <th className="px-4 py-2 text-left text-gray-400 text-sm">Role</th>
-                    <th className="px-4 py-2 text-left text-gray-400 text-sm">Online ID</th>
-                    <th className="px-4 py-2 text-left text-gray-400 text-sm">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {team.members.map((member) => (
-                    <tr key={member.user_id} className="border-t border-gray-700">
-                      <td className="px-4 py-3 text-white">
-                        {member.user?.username || member.user?.email || member.user_id || 'Unknown'}
-                      </td>
-                      <td className="px-4 py-3 text-white">
-                        {member.user_id === team.captain_id ? 'Captain' : 'Player'}
-                      </td>
-                      <td className="px-4 py-3 text-white">
-                        {member.user?.online_id || 'Not set'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEditOnlineId(member.user_id)}
-                            className="p-1 text-gray-400 hover:text-white"
-                            title="Edit online ID"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          {member.user_id !== team.captain_id && (
+            {/* Tournament Rosters Section */}
+            {tournamentRosters.length > 0 && (
+              <div className="bg-gray-700 p-4 rounded-lg mb-6">
+                <h2 className="text-xl font-bold text-white mb-4">Tournament Rosters</h2>
+                {/* Tournament roster display */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-gray-800 text-white">
+                    <thead>
+                      <tr className="bg-gray-900">
+                        <th className="py-2 px-4 text-left">Tournament</th>
+                        <th className="py-2 px-4 text-left">Status</th>
+                        <th className="py-2 px-4 text-left">Players</th>
+                        <th className="py-2 px-4 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tournamentRosters.map((roster: any) => (
+                        <tr key={roster.id} className="border-t border-gray-700">
+                          <td className="py-2 px-4">{roster.tournament_name}</td>
+                          <td className="py-2 px-4">{roster.status}</td>
+                          <td className="py-2 px-4">{roster.players?.length || 0} players</td>
+                          <td className="py-2 px-4">
                             <button
-                              onClick={() => handleRemovePlayer(member.user_id)}
-                              className="p-1 text-gray-400 hover:text-red-500"
-                              title="Remove player"
+                              onClick={() => alert('Manage Tournament Roster')}
+                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
                             >
-                              <Trash size={16} />
+                              Manage
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
-          {/* Front Office Section */}
-          <div className="bg-gray-700 p-4 rounded-lg mt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-white">Front Office</h2>
-              <button
-                onClick={() => setShowFrontOffice(!showFrontOffice)}
-                className="p-2 bg-gray-600 text-gray-300 rounded hover:bg-gray-500 flex items-center"
-                title={showFrontOffice ? "Hide Front Office" : "Show Front Office"}
-              >
-                <ChevronRight size={16} className={`transform transition-transform ${showFrontOffice ? 'rotate-90' : ''}`} />
-              </button>
-            </div>
-            
-            {showFrontOffice && (
-              <div className="space-y-4">
-                {/* Player Signing Request */}
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center">
-                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                        <UserPlus className="w-5 h-5 text-green-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-white font-medium">Player Signing Request</h3>
-                        <p className="text-gray-400 text-sm">Request to sign a player to your roster</p>
-                      </div>
-                    </div>
-                    <div className="text-green-500 font-medium">
-                      ${itemPrices['1005'] || '10.00'}
-                    </div>
-                  </div>
-                  
-                  {showPlayerSigningForm ? (
-                    <div className="mt-3">
-                      {signingError && (
-                        <div className="bg-red-900/20 border border-red-500 text-red-500 p-2 rounded-lg mb-3 text-sm">
-                          {signingError}
-                        </div>
-                      )}
-                      
-                      <div className="space-y-3">
-                        <div>
-                          <label htmlFor="playerEmail" className="block text-gray-400 text-sm mb-1">
-                            Player Email
-                          </label>
-                          <input
-                            id="playerEmail"
-                            type="email"
-                            value={playerEmail}
-                            onChange={(e) => setPlayerEmail(e.target.value)}
-                            className="w-full bg-gray-700 text-white p-2 rounded"
-                            placeholder="player@example.com"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label htmlFor="playerName" className="block text-gray-400 text-sm mb-1">
-                            Player Name
-                          </label>
-                          <input
-                            id="playerName"
-                            type="text"
-                            value={playerName}
-                            onChange={(e) => setPlayerName(e.target.value)}
-                            className="w-full bg-gray-700 text-white p-2 rounded"
-                            placeholder="Player Name"
-                          />
-                        </div>
-                        
-                        <div className="flex justify-between">
-                          <button
-                            onClick={() => {
-                              setShowPlayerSigningForm(false);
-                              setPlayerEmail('');
-                              setPlayerName('');
-                              setSigningError(null);
-                            }}
-                            className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 text-sm"
-                            disabled={processingPayment}
-                          >
-                            Cancel
-                          </button>
-                          
-                          <button
-                            onClick={handlePlayerSigningRequest}
-                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
-                            disabled={processingPayment}
-                          >
-                            Submit Request
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowPlayerSigningForm(true)}
-                      className="mt-2 px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm w-full"
-                    >
-                      Request Player Signing
-                    </button>
-                  )}
-                </div>
-                
-                {/* Online ID Change */}
-                <div 
-                  className="bg-gray-800 p-4 rounded-lg cursor-pointer hover:bg-gray-750 transition-colors"
-                  onClick={() => setIsEditingOnlineId(true)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                        <UserCog className="w-5 h-5 text-green-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-white font-medium">Online ID Change</h3>
-                        <p className="text-gray-400 text-sm">Change a player's online ID</p>
-                      </div>
-                    </div>
-                    <div className="text-green-500 font-medium">
-                      ${itemPrices['1007'] || '5.00'}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Team Rebrand */}
-                <div 
-                  className="bg-gray-800 p-4 rounded-lg cursor-pointer hover:bg-gray-750 transition-colors"
-                  onClick={handleEditTeamName}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                        <Paintbrush className="w-5 h-5 text-green-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-white font-medium">Team Rebrand</h3>
-                        <p className="text-gray-400 text-sm">Change your team's name</p>
-                      </div>
-                    </div>
-                    <div className="text-green-500 font-medium">
-                      ${itemPrices['1006'] || '20.00'}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Tournament Registration */}
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <div className="flex items-center mb-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                      <Trophy className="w-5 h-5 text-green-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-medium">Tournament Registration</h3>
-                      <p className="text-gray-400 text-sm">Register for upcoming tournaments</p>
-                    </div>
-                  </div>
-                  
-                  {availableTournaments.length > 0 ? (
-                    <div className="space-y-2 mt-2">
-                      {availableTournaments.map(tournament => (
-                        <div key={tournament.id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
-                          <span className="text-white">{tournament.name}</span>
-                          <button
-                            onClick={() => handleJoinTournament(tournament.id, tournament.name, tournament.payment_amount || itemPrices['1003'] || 75.00)}
-                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
-                          >
-                            Join ${tournament.payment_amount || itemPrices['1003'] || '75.00'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-400 text-sm mt-2">No tournaments available for registration</p>
-                  )}
-                </div>
-                
-                {/* League Registration */}
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <div className="flex items-center mb-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                      <Trophy className="w-5 h-5 text-green-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-medium">League Registration</h3>
-                      <p className="text-gray-400 text-sm">Register for active leagues</p>
-                    </div>
-                  </div>
-                  
-                  {availableLeagues.length > 0 ? (
-                    <div className="space-y-2 mt-2">
-                      {availableLeagues.map(league => (
-                        <div key={league.id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
-                          <span className="text-white">{league.name}</span>
-                          <button
-                            onClick={() => handleJoinLeague(league.id, league.name, league.payment_amount || itemPrices['1004'] || 100.00)}
-                            className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
-                          >
-                            Join ${league.payment_amount || itemPrices['1004'] || '100.00'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-400 text-sm mt-2">No leagues available for registration</p>
-                  )}
-                </div>
-                
-                {/* Transfer Ownership */}
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <div className="flex items-center mb-3">
-                    <div className="bg-green-500/10 p-2 rounded-lg mr-3">
-                      <Users className="w-5 h-5 text-green-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-medium">Transfer Ownership</h3>
-                      <p className="text-gray-400 text-sm">Transfer team ownership to another player</p>
-                    </div>
-                  </div>
-                  
-                  {team.members.filter(member => member.user_id !== team.captain_id).length > 0 ? (
-                    <div className="space-y-2 mt-2">
-                      {team.members
-                        .filter(member => member.user_id !== team.captain_id)
-                        .map(member => (
-                          <div key={member.user_id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
-                            <span className="text-white">{member.user?.username || member.user_id}</span>
+            {/* Free Agency Section */}
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <h2 className="text-xl font-bold text-white mb-4">Free Agency</h2>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-gray-800 text-white">
+                  <thead>
+                    <tr className="bg-gray-900">
+                      <th className="py-2 px-4 text-left">Player</th>
+                      <th className="py-2 px-4 text-left">Role</th>
+                      <th className="py-2 px-4 text-left">Online ID</th>
+                      <th className="py-2 px-4 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.members.map((member) => (
+                      <tr key={member.user_id} className="border-t border-gray-700">
+                        <td className="py-2 px-4">
+                          <div className="flex items-center">
+                            {member.user?.avatar_url && (
+                              <img 
+                                src={member.user.avatar_url} 
+                                alt={member.user.username || 'Player'} 
+                                className="w-8 h-8 rounded-full mr-2"
+                              />
+                            )}
+                            <div>
+                              <div className="font-medium">{member.user?.username || 'Unknown Player'}</div>
+                              <div className="text-gray-400 text-sm">{member.user?.email || ''}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2 px-4">{member.role}</td>
+                        <td className="py-2 px-4">
+                          <div className="flex items-center">
+                            <span>{member.user?.online_id || 'Not set'}</span>
                             <button
-                              onClick={() => handleTransferOwnership(
-                                member.user_id, 
-                                member.user?.username || member.user_id
-                              )}
-                              className="px-3 py-1 bg-green-700 text-white rounded hover:bg-green-600 text-sm"
+                              onClick={() => handleEditOnlineId(member.user_id)}
+                              className="ml-2 text-gray-400 hover:text-white"
+                              title="Edit Online ID"
                             >
-                              Transfer ${itemPrices['1002'] || '15.00'}
+                              <Edit className="w-4 h-4" />
                             </button>
                           </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-400 text-sm mt-2">No team members available to transfer ownership to</p>
-                  )}
-                </div>
+                        </td>
+                        <td className="py-2 px-4">
+                          {member.user_id !== team.captain_id && (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => handleRemovePlayer(member.user_id)}
+                                className="text-red-500 hover:text-red-400"
+                                title="Remove Player"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleTransferOwnership(member.user_id, member.user?.username || 'Player')}
+                                className="text-yellow-500 hover:text-yellow-400"
+                                title="Transfer Ownership"
+                              >
+                                <UserCog className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                          {member.user_id === team.captain_id && (
+                            <span className="text-green-500 text-sm">Captain</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
+              
+              <div className="mt-4">
+                <button
+                  onClick={handleAddPlayer}
+                  className="px-3 py-1 bg-blue-700 text-white rounded hover:bg-blue-600 text-sm flex items-center"
+                >
+                  <UserPlus className="w-4 h-4 mr-1" /> Add Player
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-      
-      {/* Confirmation Dialog for Online ID Change */}
+
+      {/* Render online ID processor as a modal */}
+      {renderOnlineIdProcessor()}
+
+      {/* Show confirmation dialogs */}
       <ConfirmationDialog
         isOpen={showOnlineIdConfirmation}
         title="Confirm Online ID Change"
-        message={`Changing the online ID will incur a $2.00 fee. Do you want to proceed with changing the online ID to "${newOnlineId}"?`}
-        confirmText="Proceed to Payment"
+        message={`Are you sure you want to change the online ID to "${newOnlineId}"? This may require a payment.`}
+        confirmText="Continue to Payment"
         cancelText="Cancel"
         onConfirm={processOnlineIdChangePayment}
         onCancel={() => setShowOnlineIdConfirmation(false)}
         type="warning"
-        isLoading={processingPayment}
       />
-      
-      {/* Confirmation Dialog for Team Rebrand */}
+
       <ConfirmationDialog
         isOpen={showRebrandConfirmation}
         title="Confirm Team Name Change"
-        message={`Changing the team name will incur a $5.00 fee. Do you want to proceed with changing the team name from "${team?.name}" to "${newTeamName}"?`}
-        confirmText="Proceed to Payment"
+        message={`Are you sure you want to rename the team from "${team?.name}" to "${newTeamName}"? This requires a payment.`}
+        confirmText="Continue to Payment"
         cancelText="Cancel"
         onConfirm={processTeamRebrandPayment}
         onCancel={() => setShowRebrandConfirmation(false)}
         type="warning"
-        isLoading={processingPayment}
       />
-      
-      {/* Confirmation Dialog for Player Signing Request */}
+
       <ConfirmationDialog
         isOpen={showPlayerSigningConfirmation}
         title="Confirm Player Signing Request"
-        message={`Requesting to sign ${playerName} (${playerEmail}) to your team will incur a $${itemPrices['1001'] || '5.00'} fee. Do you want to proceed?`}
-        confirmText="Proceed to Payment"
+        message={`Are you sure you want to request signing ${playerName} (${playerEmail}) to your team? This requires a payment.`}
+        confirmText="Continue to Payment"
         cancelText="Cancel"
         onConfirm={processPlayerSigningPayment}
         onCancel={() => setShowPlayerSigningConfirmation(false)}
         type="warning"
-        isLoading={processingPayment}
       />
     </div>
   );

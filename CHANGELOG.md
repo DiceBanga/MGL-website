@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2024-05-01
+
+### Backend Improvements
+- Standardized environment variable naming conventions for Supabase integration
+- Updated backend to properly run as a Python package with `uvicorn backend.main:app`
+- Fixed environment variable loading for relative vs. absolute imports
+- Enhanced project structure to support proper Python packaging
+- Updated documentation to reflect new recommended backend startup method
+
+### Environment Configuration
+- Aligned environment variable names with Supabase SDK expectations
+- Updated Supabase client creation to use `SUPABASE_ANON_KEY` instead of `SUPABASE_KEY`
+- Improved environment variable documentation in README
+- Enhanced backward compatibility with existing .env files
+
+### DevOps & Deployment
+- Updated Docker configuration to support package-based backend structure
+- Added Supabase environment variables to docker-compose.yaml
+- Modified backend Dockerfile to correctly structure the application as a package
+- Updated PYTHONPATH in Docker container for proper module resolution
+- Improved Docker container startup command to use the correct module path
+
 ## [1.7.0] - 2024-04-15
 
 ### Payment System Enhancements
@@ -16,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved error handling and validation for payment details
 - Fixed team ownership transfer by using the correct RPC function with proper parameters
 - Fixed UUID generation for team change requests to ensure proper format
+- Fixed team transfer process to create team change request record before updating team captain
+- Added detailed debugging logs for team transfer process to troubleshoot UUID issues
+- Fixed payment ID handling to ensure proper propagation to team change requests
+- Enhanced error handling for credit card validation errors
+- Fixed metadata structure in payment records to include all required fields
+- Added UUID validation to prevent invalid UUID format errors
+- Separated team change request creation and team captain update to avoid conflicts
 
 ### Team Dashboard Improvements
 - Enhanced Front Office section with consistent payment flows
@@ -26,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced team ownership transfer with proper change request creation
 - Fixed team captain transfer to correctly update team ownership after payment
 - Added SQL function to properly handle team deletion
+- Added ability for owners to change team captains directly from the Owner Dashboard
 
 ### Database Integration
 - Added support for creating team change requests in the database

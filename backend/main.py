@@ -8,6 +8,16 @@ import uuid
 import json
 from dotenv import load_dotenv
 from datetime import datetime
+from supabase import create_client, Client as SupabaseClient
+import pathlib
+
+# Import routes
+from .routes.payments import router as payments_router
+from .routes.requests import router as requests_router
+from .routes.webhooks import router as webhooks_router
+
+# Import services
+from .services.payment_service import PaymentService
 
 # Configure logging
 logging.basicConfig(
@@ -16,11 +26,61 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# Load environment variables from the correct location
+current_file = pathlib.Path(__file__).resolve()
+backend_dir = current_file.parent
+env_path = backend_dir / '.env'
+
+print(f"Looking for .env file at: {env_path}")
+if env_path.exists():
+    print(f".env file found at {env_path}")
+    load_dotenv(dotenv_path=env_path)
+else:
+    print(f".env file NOT found at {env_path}, trying alternative locations")
+    # Try alternative locations
+    alt_paths = [
+        pathlib.Path.cwd() / 'backend' / '.env',
+        pathlib.Path.cwd() / '.env',
+    ]
+    for path in alt_paths:
+        print(f"Checking for .env at: {path}")
+        if path.exists():
+            print(f".env file found at {path}")
+            load_dotenv(dotenv_path=path)
+            break
+
+# Log environment variables
+logger.debug(f"SUPABASE_URL: {os.environ.get('SUPABASE_URL')}")
+logger.debug(f"SUPABASE_ANON_KEY: {os.environ.get('SUPABASE_ANON_KEY') and 'Set (hidden)' or 'Not set'}")
+
+# Global clients
+square_client = Client(
+    access_token=os.environ.get('SQUARE_ACCESS_TOKEN'),
+    environment=os.environ.get('SQUARE_ENVIRONMENT', 'sandbox')
+)
+
+# Create Supabase client with error handling
+supabase_url = os.environ.get('SUPABASE_URL')
+supabase_key = os.environ.get('SUPABASE_ANON_KEY')
+
+if not supabase_url or not supabase_key:
+    logger.error("Supabase environment variables not set")
+    logger.error(f"ENV path tried: {env_path}, exists: {env_path.exists()}")
+    raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY environment variables must be set")
+
+supabase_client = create_client(supabase_url, supabase_key)
+
+# Create global payment service
+payment_service = PaymentService(
+    square_client=square_client,
+    supabase=supabase_client,
+    square_location_id=os.environ.get('SQUARE_LOCATION_ID'),
+    square_app_id=os.environ.get('SQUARE_APP_ID')
+)
 
 app = FastAPI(
-    title="Square Payment API",
-    description="API for processing Square payments",
+    title="MGL API",
+    description="API for team management, payments, and registrations",
     version="1.0.0",
     debug=True
 )
@@ -36,17 +96,23 @@ app.add_middleware(
 )
 # ------------- END CORS CONFIGURATION -------------
 
+# Include routers
+app.include_router(payments_router, prefix="/api", tags=["payments"])
+app.include_router(requests_router, prefix="/api", tags=["requests"])
+app.include_router(webhooks_router, prefix="/api/webhooks", tags=["webhooks"])
+
 # ------------- HEALTH CHECK ENDPOINTS -------------
 @app.get("/")
 def root():
     """Root endpoint providing API information"""
     return {
-        "name": "Square Payment API",
+        "name": "MGL API",
         "version": "1.0.0",
         "status": "running",
         "endpoints": {
-            "main": "/api/payments",
-            "test": "/api/payments/test",
+            "payments": "/api/payments",
+            "requests": "/api/team/transfer, /api/team/roster, /api/team/rebrand, /api/team/online-id, /api/team/create, /api/tournament/register, /api/league/register",
+            "webhooks": "/api/webhooks/square",
             "health": "/ping",
             "debug": "/debug"
         }
