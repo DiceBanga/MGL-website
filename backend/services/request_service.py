@@ -102,6 +102,16 @@ class RequestService:
         """
         Create a request record in the database
         """
+        self.logger.info(f"Creating request record for {request_data['request_type']} with ID: {request_data['request_id']}")
+        
+        # Prepare metadata with all relevant fields
+        metadata = request_data.get("metadata", {})
+        
+        # Include all request-specific fields in metadata for easier retrieval later
+        for key, value in request_data.items():
+            if key not in ["request_id", "team_id", "request_type", "requested_by", "status", "created_at", "metadata"]:
+                metadata[key] = value
+        
         request_record = {
             "id": request_data["request_id"],
             "team_id": request_data["team_id"],
@@ -109,35 +119,52 @@ class RequestService:
             "requested_by": request_data["requested_by"],
             "status": "pending",
             "created_at": datetime.now().isoformat(),
-            "metadata": request_data.get("metadata", {})
+            "metadata": metadata
         }
         
-        # Add optional fields based on request type
-        if "player_id" in request_data:
-            request_record["player_id"] = request_data["player_id"]
+        # Add type-specific fields
+        if request_data["request_type"] == "team_rebrand":
+            request_record["old_value"] = request_data.get("old_name", "")
+            request_record["new_value"] = request_data.get("new_name", "")
         
-        if "old_value" in request_data:
-            request_record["old_value"] = request_data["old_value"]
-            
-        if "new_value" in request_data:
-            request_record["new_value"] = request_data["new_value"]
-            
-        if "item_id" in request_data:
-            request_record["item_id"] = request_data["item_id"]
+        elif request_data["request_type"] == "online_id_change":
+            request_record["player_id"] = request_data.get("player_id", "")
+            request_record["old_value"] = request_data.get("old_online_id", "")
+            request_record["new_value"] = request_data.get("new_online_id", "")
         
-        if "tournament_id" in request_data:
-            request_record["tournament_id"] = request_data["tournament_id"]
-            
-        if "league_id" in request_data:
-            request_record["league_id"] = request_data["league_id"]
+        elif request_data["request_type"] == "team_creation":
+            request_record["new_value"] = request_data.get("team_name", "")
+            if request_data.get("league_id"):
+                request_record["league_id"] = request_data["league_id"]
+        
+        elif request_data["request_type"] == "team_transfer":
+            request_record["old_value"] = request_data.get("old_captain_id", "")
+            request_record["new_value"] = request_data.get("new_captain_id", "")
+        
+        elif request_data["request_type"] == "roster_change":
+            request_record["player_id"] = request_data.get("player_id", "")
+            request_record["new_value"] = request_data.get("new_role", "")
+        
+        elif request_data["request_type"] == "tournament_registration":
+            request_record["tournament_id"] = request_data.get("tournament_id", "")
+        
+        elif request_data["request_type"] == "league_registration":
+            request_record["league_id"] = request_data.get("league_id", "")
         
         # Insert into team_change_requests table
-        result = await self.supabase.table("team_change_requests").insert(request_record).execute()
-        
-        if hasattr(result, 'error') and result.error is not None:
-            raise Exception(f"Failed to create request record: {result.error}")
+        try:
+            self.logger.info(f"Inserting request record: {request_record}")
+            result = await self.supabase.table("team_change_requests").insert(request_record).execute()
             
-        return result
+            if hasattr(result, 'error') and result.error is not None:
+                self.logger.error(f"Failed to create request record: {result.error}")
+                raise Exception(f"Failed to create request record: {result.error}")
+            
+            self.logger.info(f"Successfully created request record with ID: {request_data['request_id']}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error creating request record: {str(e)}")
+            raise
     
     async def _process_payment(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -156,6 +183,22 @@ class RequestService:
             "request_type": request_data["request_type"],
             "team_id": request_data["team_id"]
         }
+        
+        # Add descriptive note based on request type
+        request_type_names = {
+            "team_transfer": "Team Ownership Transfer",
+            "roster_change": "Team Roster Change",
+            "tournament_registration": "Tournament Registration",
+            "league_registration": "League Registration",
+            "team_rebrand": "Team Name Change",
+            "online_id_change": "Online ID Update",
+            "team_creation": "New Team Creation"
+        }
+        
+        payment_data["note"] = f"{request_type_names.get(request_data['request_type'], 'Team Action')} - ID: {request_data['request_id'][:8]}"
+        
+        # Log payment data for debugging
+        self.logger.info(f"Processing payment for request {request_data['request_id']} with reference_id: {payment_data['reference_id']}")
         
         # Process payment using payment service
         return await self.payment_service.process_payment(payment_data)

@@ -124,24 +124,29 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
     try {
       // Create the request data based on the action type
       let requestData: RequestData;
+      // Generate a consistent request ID for both the request and payment reference
+      const requestId = uuidv4();
       
       switch (actionType) {
         case 'team_rebrand':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'team_rebrand',
             team_id: teamId!,
             requested_by: userId,
             requires_payment: requiresPayment,
             old_name: initialValue || '',
             new_name: formData.team_name!,
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as TeamRebrandRequest;
           break;
           
         case 'online_id_change':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'online_id_change',
             team_id: teamId!,
             requested_by: userId,
@@ -150,13 +155,16 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
             old_online_id: initialValue,
             new_online_id: formData.online_id!,
             platform: formData.platform || 'psn',
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as OnlineIdChangeRequest;
           break;
           
         case 'team_creation':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'team_creation',
             team_id: uuidv4(), // Generate a new team ID
             requested_by: userId,
@@ -164,26 +172,32 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
             team_name: formData.team_name!,
             captain_id: userId,
             league_id: formData.league_id,
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as TeamCreationRequest;
           break;
           
         case 'team_transfer':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'team_transfer',
             team_id: teamId!,
             requested_by: userId,
             requires_payment: requiresPayment,
             new_captain_id: formData.new_captain_id!,
             old_captain_id: formData.old_captain_id || userId,
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as TeamTransferRequest;
           break;
           
         case 'roster_change':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'roster_change',
             team_id: teamId!,
             requested_by: userId,
@@ -191,13 +205,16 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
             player_id: formData.player_id!,
             operation: formData.operation || 'add',
             new_role: formData.new_role,
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as RosterChangeRequest;
           break;
           
         case 'league_registration':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'league_registration',
             team_id: teamId!,
             requested_by: userId,
@@ -205,20 +222,26 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
             league_id: formData.league_id!,
             season: formData.season || 1,
             player_ids: formData.player_ids || [],
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as LeagueRegistrationRequest;
           break;
           
         case 'tournament_registration':
           requestData = {
-            request_id: uuidv4(),
+            request_id: requestId,
             request_type: 'tournament_registration',
             team_id: teamId!,
             requested_by: userId,
             requires_payment: requiresPayment,
             tournament_id: formData.tournament_id!,
             player_ids: formData.player_ids || [],
-            payment_data: requiresPayment ? { amount: paymentAmount } : undefined
+            payment_data: requiresPayment ? { 
+              amount: paymentAmount,
+              metadata: { request_id: requestId }
+            } : undefined
           } as TournamentRegistrationRequest;
           break;
       }

@@ -13,13 +13,16 @@ interface PaymentDetailsOptions {
 export function createPaymentDetails(options: PaymentDetailsOptions) {
   const { amount, description, itemId, metadata = {} } = options;
   
+  // Use the request_id as the reference_id if available, otherwise generate a new UUID
+  const referenceId = metadata.request_id || uuidv4();
+  
   return {
     amount,
     currency: 'USD',
     idempotency_key: uuidv4(),
     description,
     item_id: itemId,
-    reference_id: uuidv4(),
+    reference_id: referenceId,
     metadata: {
       ...metadata,
       created_at: new Date().toISOString()

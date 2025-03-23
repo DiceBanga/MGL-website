@@ -42,6 +42,14 @@ class PaymentService:
                 body["note"] = payment_data["note"]
             if payment_data.get("reference_id"):
                 body["reference_id"] = payment_data["reference_id"]
+            
+            # Add metadata to payment
+            if payment_data.get("metadata"):
+                # If there's a request_id in metadata, use it as reference_id for easier tracking
+                if payment_data["metadata"].get("request_id") and not body.get("reference_id"):
+                    body["reference_id"] = payment_data["metadata"]["request_id"]
+                
+            self.logger.info(f"Creating Square payment with reference_id: {body.get('reference_id')}")
 
             result = self.square_client.payments.create_payment(body=body)
 

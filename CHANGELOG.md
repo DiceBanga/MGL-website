@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2024-05-15
+
+### Centralized Request System
+- Implemented a centralized request system for all team management actions
+- Created reusable `TeamActionProcessor` component for unified action handling
+- Added request processing for team transfers, roster changes, and registrations
+- Enhanced data fetching in `TeamDashboard` for non-captains
+- Fixed database field mapping between players and UI components
+- Added support for all action types in a single processor component
+- Implemented request handling with payment integrations
+- Created backend service for executing approved requests
+- Added comprehensive form interfaces for all request types
+
+### Team Dashboard Improvements
+- Added distinct views for captains and non-captains
+- Enhanced team data fetching to support various user roles
+- Fixed issues with league and tournament roster display
+- Added support for viewing roster information for team members
+- Integrated centralized action processor for all team management
+- Fixed player data mapping to correctly display user information
+
+### Database Schema
+- Updated database queries to properly fetch related entity data
+- Fixed relationship mappings between teams, players, and rosters
+- Improved database field consistency across tables
+- Added proper error handling for database queries
+
 ## [1.8.0] - 2024-05-01
 
 ### Backend Improvements

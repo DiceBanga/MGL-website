@@ -406,18 +406,25 @@ const TeamDashboard = () => {
       oldValue?: string;
       newValue?: string;
       metadata?: Record<string, any>;
+      requestId?: string; // Add optional requestId parameter
     }
   ) => {
     try {
-      const { tournamentId, leagueId, playerId, oldValue, newValue, metadata } = options;
+      const { tournamentId, leagueId, playerId, oldValue, newValue, metadata, requestId } = options;
       
-      // Generate a UUID for the request ID
-      const requestId = uuidv4();
+      // Generate a UUID for the request ID if not provided
+      const finalRequestId = requestId || uuidv4();
+      
+      console.log(`Creating team change request with ID: ${finalRequestId}`);
+      console.log(`Team ID: ${teamId}`);
+      if (playerId) console.log(`Player ID: ${playerId}`);
+      console.log(`Payment ID (reference only): ${paymentId}`);
+      console.log(`Using formatted item ID: ${itemId}`);
       
       const { data, error } = await supabase
         .from('team_change_requests')
         .insert({
-          id: requestId, // Use a UUID for the request ID
+          id: finalRequestId, // Use provided requestId or generate one
           team_id: teamId,
           request_type: requestType,
           requested_by: requestedBy,
@@ -427,7 +434,8 @@ const TeamDashboard = () => {
           old_value: oldValue,
           new_value: newValue,
           status: 'pending',
-          payment_id: paymentId,
+          payment_id: null, // Set to null initially
+          payment_reference: paymentId, // Store payment ID in a separate field for reference
           item_id: itemId,
           metadata
         })
@@ -439,6 +447,7 @@ const TeamDashboard = () => {
         return null;
       }
       
+      console.log('Team change request created:', data);
       return data;
     } catch (err) {
       console.error('Error creating team change request:', err);
@@ -815,7 +824,7 @@ const TeamDashboard = () => {
       // Get the price from the itemPrices state
       const price = itemPrices['Team Transfer'] || 15.00; // Default to 15.00 if not found
       
-      // Generate a unique request ID
+      // Generate a unique request ID - THIS MUST BE USED CONSISTENTLY
       const requestId = uuidv4();
       console.log('Generated Request ID:', requestId);
       
@@ -834,7 +843,7 @@ const TeamDashboard = () => {
           captainId: user.id,
           playerId: newCaptainId,
           item_id: itemId,
-          request_id: requestId
+          request_id: requestId // IMPORTANT: Use the same request ID here
         }
       );
       
@@ -848,7 +857,7 @@ const TeamDashboard = () => {
         newCaptainId: newCaptainId,
         newCaptainName: newCaptainName,
         teamName: team.name,
-        requestId: requestId,
+        requestId: requestId, // Include the request ID in metadata
         // Store the data needed for creating the team change request
         changeRequestData: {
           teamId: team.id,
@@ -857,10 +866,12 @@ const TeamDashboard = () => {
           playerId: newCaptainId,
           oldValue: user.id,
           newValue: newCaptainId,
+          requestId: requestId, // Include request ID in change request data
           metadata: {
             oldCaptainName: user.email,
             newCaptainName: newCaptainName,
-            teamName: team.name
+            teamName: team.name,
+            requestId: requestId // Also include it in nested metadata
           }
         }
       };

@@ -14,6 +14,18 @@ export const generateReferenceId = (
   playerId?: string,
   requestId?: string
 ): string => {
+  // If a request ID is provided, use a shortened version that's Square-compatible
+  // Square requires reference_id to be 40 characters or less
+  if (requestId) {
+    // Remove hyphens from UUID and take the first 32 characters
+    const shortRequestId = requestId.replace(/-/g, '').slice(0, 32);
+    
+    // Add the item ID as a prefix for categorization
+    return `${itemId}-${shortRequestId}`;
+    // This format: "1002-98ddd206fe9b46c79e562625080a86fb"
+    // Is only ~37 characters and preserves the request ID in a recoverable format
+  }
+  
   // Create date part
   const date = new Date();
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -28,13 +40,9 @@ export const generateReferenceId = (
   const captainIdPart = processId(captainId);
   const eventIdPart = processId(eventId);
   const playerIdPart = processId(playerId);
-  const requestIdPart = processId(requestId);
   
   // Construct reference ID based on what's available
-  if (requestId) {
-    // For change requests
-    return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}-${requestIdPart}`;
-  } else if (playerId) {
+  if (playerId) {
     // For player-specific operations
     return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}-${playerIdPart}`;
   } else if (eventId) {
@@ -44,6 +52,31 @@ export const generateReferenceId = (
     // Fallback for other payment types
     return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}`;
   }
+};
+
+/**
+ * Rebuilds original request ID from a shortened reference ID
+ * Returns null if the format doesn't match our shortened UUID format
+ */
+export const extractRequestIdFromReference = (referenceId: string): string | null => {
+  // Check if it matches our "itemId-shortRequestId" format
+  const parts = referenceId.split('-');
+  if (parts.length === 2) {
+    const shortRequestId = parts[1];
+    
+    // If the second part is a 32-character hex string, it's likely our shortened UUID
+    if (/^[0-9a-f]{32}$/i.test(shortRequestId)) {
+      // Convert back to UUID format
+      const uuid = shortRequestId.slice(0, 8) + '-' + 
+                   shortRequestId.slice(8, 12) + '-' + 
+                   shortRequestId.slice(12, 16) + '-' + 
+                   shortRequestId.slice(16, 20) + '-' + 
+                   shortRequestId.slice(20);
+      return uuid;
+    }
+  }
+  
+  return null;
 };
 
 /**
