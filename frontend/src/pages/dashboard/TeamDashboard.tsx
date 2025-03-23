@@ -107,10 +107,10 @@ const TeamDashboard = () => {
       
       console.log('Fetching team data for ID:', teamIdFromUrl);
 
-      // Query to fetch team with the given ID
+      // First, fetch the team without the join
       const { data: teamData, error: teamError } = await supabase
         .from('teams')
-        .select('*, captain:captain_id(id, user_name, email)')
+        .select('*')
         .eq('id', teamIdFromUrl)
         .single();
 
@@ -126,15 +126,104 @@ const TeamDashboard = () => {
         setLoading(false);
         return;
       }
+      
+      // Then fetch captain details separately if we have a captain_id
+      let captainData = null;
+      if (teamData.captain_id) {
+        const { data, error } = await supabase
+          .from('players')
+          .select('user_id, display_name, email, avatar_url')
+          .eq('user_id', teamData.captain_id)
+          .single();
+          
+        if (!error && data) {
+          captainData = {
+            id: data.user_id,
+            user_name: data.display_name,  // Map display_name to user_name
+            email: data.email,
+            avatar_url: data.avatar_url
+          };
+        }
+      }
+      
+      // Combine the data
+      const combinedTeamData = {
+        ...teamData,
+        captain: captainData
+      };
 
       // Set whether the current user is the team captain
       const isCaptainUser = teamData.captain_id === user?.id;
       setIsCaptain(isCaptainUser);
 
-      // Fetch all members of the team - this includes league roster
+      // Fetch team members
+      const { data: teamMembersData, error: teamMembersError } = await supabase
+        .from('team_players')
+        .select('*')
+        .eq('team_id', teamData.id);
+
+      if (teamMembersError) {
+        console.error('Error fetching team members:', teamMembersError);
+        setError(teamMembersError.message);
+      }
+
+      // If we have team members data, fetch the player details separately
+      let enhancedTeamMembers = [];
+      if (teamMembersData && teamMembersData.length > 0) {
+        // Get all user IDs from the team members
+        const userIds = teamMembersData.map(member => member.user_id);
+        
+        // Fetch player details in a single query
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('user_id, display_name, email, avatar_url')
+          .in('user_id', userIds);
+          
+        if (!playerError && playerData) {
+          // Map player data to each team member
+          enhancedTeamMembers = teamMembersData.map(member => {
+            const player = playerData.find(p => p.user_id === member.user_id);
+            return {
+              ...member,
+              id: member.user_id, // Set id to user_id for consistency with UI expectations
+              user: player ? {
+                id: player.user_id,
+                username: player.display_name,  // Map display_name to username for UI
+                email: player.email,
+                avatar_url: player.avatar_url
+              } : {
+                id: member.user_id,
+                username: `Player ${member.user_id.substring(0, 8)}`,
+                email: '',
+                avatar_url: null
+              }
+            };
+          });
+        } else {
+          // If player data fetch fails, create simple user objects
+          enhancedTeamMembers = teamMembersData.map(member => ({
+            ...member,
+            id: member.user_id,
+            user: {
+              id: member.user_id,
+              username: `Player ${member.user_id.substring(0, 8)}`,
+              email: '',
+              avatar_url: null
+            }
+          }));
+        }
+      }
+
+      // Update the combined team data with members
+      const finalTeamData = {
+        ...combinedTeamData,
+        members: enhancedTeamMembers || []
+      };
+
+      // Fetch all members of the team - league roster
       const { data: leagueRosterData, error: leagueRosterError } = await supabase
         .from('league_roster')
-        .select('*, user:user_id(id, user_name, email)')
+        .select('*')
         .eq('team_id', teamData.id);
 
       if (leagueRosterError) {
@@ -142,26 +231,88 @@ const TeamDashboard = () => {
         setError(leagueRosterError.message);
       }
 
+      // If we have league roster data, fetch the player details separately
+      let enhancedLeagueRosterData = [];
+      if (leagueRosterData && leagueRosterData.length > 0) {
+        // Get all user IDs from the roster
+        const userIds = leagueRosterData.map(roster => roster.player_id);
+        
+        // Fetch player details in a single query
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('user_id, display_name, email, avatar_url')
+          .in('user_id', userIds);
+          
+        if (!playerError && playerData) {
+          // Map player data to each roster entry
+          enhancedLeagueRosterData = leagueRosterData.map(roster => {
+            const player = playerData.find(p => p.user_id === roster.player_id);
+            return {
+              ...roster,
+              user: player ? {
+                id: player.user_id,
+                user_name: player.display_name,
+                email: player.email,
+                avatar_url: player.avatar_url
+              } : null
+            };
+          });
+        } else {
+          enhancedLeagueRosterData = leagueRosterData;
+        }
+      }
+
       // Fetch tournament roster
       const { data: tournamentRosterData, error: tournamentRosterError } = await supabase
         .from('tournament_roster')
-        .select('*, user:user_id(id, user_name, email)')
+        .select('*')
         .eq('team_id', teamData.id);
 
       if (tournamentRosterError) {
         console.error('Error fetching tournament roster:', tournamentRosterError);
         setError(tournamentRosterError.message);
       }
+      
+      // If we have tournament roster data, fetch the player details separately
+      let enhancedTournamentRosterData = [];
+      if (tournamentRosterData && tournamentRosterData.length > 0) {
+        // Get all user IDs from the roster
+        const userIds = tournamentRosterData.map(roster => roster.player_id);
+        
+        // Fetch player details in a single query
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('user_id, display_name, email, avatar_url')
+          .in('user_id', userIds);
+          
+        if (!playerError && playerData) {
+          // Map player data to each roster entry
+          enhancedTournamentRosterData = tournamentRosterData.map(roster => {
+            const player = playerData.find(p => p.user_id === roster.player_id);
+            return {
+              ...roster,
+              user: player ? {
+                id: player.user_id,
+                user_name: player.display_name,
+                email: player.email,
+                avatar_url: player.avatar_url
+              } : null
+            };
+          });
+        } else {
+          enhancedTournamentRosterData = tournamentRosterData;
+        }
+      }
 
       // Check if user is on any roster
       const userOnAnyRoster = 
-        (leagueRosterData && leagueRosterData.some(player => player.user_id === user?.id)) || 
-        (tournamentRosterData && tournamentRosterData.some(player => player.user_id === user?.id));
+        (leagueRosterData && leagueRosterData.some(player => player.player_id === user?.id)) || 
+        (tournamentRosterData && tournamentRosterData.some(player => player.player_id === user?.id));
       
       setUserOnRoster(userOnAnyRoster || false);
-      setLeagueRosters(leagueRosterData || []);
-      setTournamentRosters(tournamentRosterData || []);
-      setTeam(teamData);
+      setLeagueRosters(enhancedLeagueRosterData || []);
+      setTournamentRosters(enhancedTournamentRosterData || []);
+      setTeam(finalTeamData);
       setNewTeamName(teamData.name);
       setLoading(false);
     } catch (error) {
