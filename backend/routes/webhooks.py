@@ -107,6 +107,17 @@ async def process_request_update(request_id: str, status: str, webhook_data: Dic
                 request_data["old_captain_id"] = request.get('old_value') or metadata.get('old_captain_id') or metadata.get('oldCaptainId')
                 logger.info(f"Team Transfer: from {request_data['old_captain_id']} to {request_data['new_captain_id']}")
                 
+                # Double-check that we have the old captain ID - critical for transfer
+                if not request_data.get("old_captain_id"):
+                    # If it's not in the expected places, try to get it from the teams table
+                    try:
+                        team_result = await request_service.supabase.table("teams").select("captain_id").eq("id", request_data["team_id"]).execute()
+                        if team_result.data and len(team_result.data) > 0:
+                            request_data["old_captain_id"] = team_result.data[0]["captain_id"]
+                            logger.info(f"Retrieved old_captain_id from teams table: {request_data['old_captain_id']}")
+                    except Exception as e:
+                        logger.error(f"Error retrieving old captain ID: {str(e)}")
+                
             elif request.get('request_type') == 'roster_change':
                 request_data["player_id"] = request.get('player_id') or metadata.get('player_id') or metadata.get('playerId')
                 request_data["new_role"] = request.get('new_value') or metadata.get('new_role') or metadata.get('role', 'player')

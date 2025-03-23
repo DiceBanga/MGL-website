@@ -243,16 +243,29 @@ class RequestService:
         """
         team_id = request_data["team_id"]
         new_captain_id = request_data["new_captain_id"]
+        old_captain_id = request_data.get("old_captain_id") or request_data.get("oldCaptainId")
         
-        # Call the transfer_team_ownership function
+        # Log detailed information for debugging
+        self.logger.info(f"Transferring team ownership for team {team_id}")
+        self.logger.info(f"Old captain: {old_captain_id}")
+        self.logger.info(f"New captain: {new_captain_id}")
+        
+        # Call the admin_transfer_team_ownership function instead of transfer_team_ownership
+        # This version doesn't rely on auth.uid() and can be called from webhooks
         result = await self.supabase.rpc(
-            "transfer_team_ownership",
-            {"p_team_id": team_id, "p_new_captain_id": new_captain_id}
+            "admin_transfer_team_ownership",
+            {
+                "p_team_id": team_id, 
+                "p_new_captain_id": new_captain_id,
+                "p_old_captain_id": old_captain_id
+            }
         ).execute()
         
         if hasattr(result, 'error') and result.error is not None:
+            self.logger.error(f"Failed to transfer team ownership: {result.error}")
             raise Exception(f"Failed to transfer team ownership: {result.error}")
             
+        self.logger.info(f"Team ownership transferred successfully for team {team_id}")
         return {"success": True, "team_id": team_id, "new_captain_id": new_captain_id}
     
     async def _update_roster(self, request_data: Dict[str, Any]) -> Dict[str, Any]:

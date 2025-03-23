@@ -64,6 +64,89 @@
 11. Create a payment service that handles all payment-related operations
 12. Implement proper error recovery for failed payments
 
+### Square Webhook Production Setup
+
+When moving from development to production, the following steps must be completed for payment webhooks:
+
+1. **Domain Requirements**:
+   - Secure a proper domain name for the backend API
+   - Setup SSL/TLS certificates (required by Square)
+   - Configure reverse proxy/load balancer if needed
+
+2. **Square Production Configuration**:
+   - Create/upgrade to a production Square account
+   - Generate production API keys and credentials
+   - Transfer sandbox application configuration to production
+   - Update environment variables in deployment environment:
+     ```
+     SQUARE_ENVIRONMENT=production
+     SQUARE_ACCESS_TOKEN=[Production Token]
+     SQUARE_LOCATION_ID=[Production Location ID]
+     SQUARE_APP_ID=[Production App ID]
+     ```
+
+3. **Webhook Security**:
+   - Implement Square webhook signature verification:
+     ```python
+     # Example implementation for webhook.py
+     import hmac
+     import hashlib
+     import base64
+     
+     @router.post("/square")
+     async def handle_square_webhook(request: Request, background_tasks: BackgroundTasks):
+         # Get signature from headers
+         signature = request.headers.get("x-square-signature")
+         if not signature:
+             logger.error("Missing Square signature")
+             raise HTTPException(status_code=401, detail="Unauthorized")
+             
+         # Get webhook URL from config
+         webhook_url = os.environ.get("SQUARE_WEBHOOK_URL")
+         
+         # Get the webhook signature key from environment
+         sig_key = os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY")
+         
+         # Get raw payload
+         payload_bytes = await request.body()
+         payload_str = payload_bytes.decode('utf-8')
+         
+         # Compute HMAC with SHA1
+         hmac_obj = hmac.new(sig_key.encode(), msg=payload_str.encode(), digestmod=hashlib.sha1)
+         calculated_signature = base64.b64encode(hmac_obj.digest()).decode()
+         
+         # Compare signatures
+         if not hmac.compare_digest(signature, calculated_signature):
+             logger.error("Invalid Square signature")
+             raise HTTPException(status_code=401, detail="Unauthorized")
+         
+         # Continue with normal webhook processing
+         # ...
+     ```
+
+4. **Logging and Monitoring**:
+   - Implement comprehensive logging for payment events
+   - Set up alerts for webhook failures
+   - Create dashboard for payment success/failure rates
+   - Configure regular audit of payment reconciliation
+
+5. **Redundancy and Fault Tolerance**:
+   - Implement idempotent webhook handling (already done)
+   - Setup retry mechanism for webhook delivery failures
+   - Add fallback webhook handling for critical payment events
+
+6. **Testing Before Launch**:
+   - Use Square's production testing tools to verify webhook delivery
+   - Process test transactions with real credentials but test card numbers
+   - Verify all payment flows end-to-end in staging environment 
+   - Conduct load testing to ensure webhook handler performs under pressure
+
+7. **Documentation Update**:
+   - Document production webhook URL for team reference
+   - Add procedure for webhook troubleshooting
+   - Create runbook for common webhook issues
+   - Document required credentials and configuration
+
 ### Pros and Cons
 
 #### Pros
