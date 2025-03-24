@@ -48,11 +48,13 @@ import AdminTournaments from './pages/admin/Tournaments';
 import AdminTeams from './pages/admin/Teams';
 import AdminPlayers from './pages/admin/Players';
 import AdminGames from './pages/admin/Games';
+import AdminPanel from './pages/admin/AdminPanel';
 import AdminNews from './pages/admin/News';
 import AdminSponsors from './pages/admin/Sponsors';
 import AdminSettings from './pages/admin/Settings';
 import AdminSiteContent from './pages/admin/SiteContent';
 import AdminManagement from './pages/admin/Management';
+import AdminRequests from './pages/admin/Requests';
 
 // Payment Pages
 import Payments from './pages/Payments';
@@ -69,6 +71,7 @@ import OwnerTeams from './pages/owner/Teams';
 import OwnerTournaments from './pages/owner/Tournaments';
 import OwnerNews from './pages/owner/News';
 import OwnerManagement from './pages/owner/Management';
+import OwnerRequests from './pages/owner/Requests';
 
 const router = createBrowserRouter([
   {
@@ -139,7 +142,8 @@ const router = createBrowserRouter([
           { path: 'sponsors', element: <AdminSponsors /> },
           { path: 'settings', element: <AdminSettings /> },
           { path: 'site-content', element: <AdminSiteContent /> },
-          { path: 'management', element: <AdminManagement /> }
+          { path: 'management', element: <AdminManagement /> },
+          { path: 'requests', element: <AdminRequests /> }
         ]
       },
 
@@ -158,7 +162,8 @@ const router = createBrowserRouter([
           { path: 'teams', element: <OwnerTeams /> },
           { path: 'tournaments', element: <OwnerTournaments /> },
           { path: 'news', element: <OwnerNews /> },
-          { path: 'items', element: <ItemsManagement isOwner={true} /> }
+          { path: 'items', element: <ItemsManagement isOwner={true} /> },
+          { path: 'requests', element: <OwnerRequests /> }
         ]
       },
 

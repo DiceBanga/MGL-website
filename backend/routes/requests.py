@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uuid
@@ -179,4 +179,36 @@ async def get_team_requests(
             
         return result.data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/approve_transfer", response_model=dict)
+async def approve_transfer_request(
+    request_id: str = Body(..., embed=True),
+    request_service: RequestService = Depends(get_request_service)
+):
+    """
+    Approve and process a team transfer request
+    """
+    try:
+        # Import the function from the approve_transfer script
+        from scripts.approve_transfer import approve_and_process_transfer
+        
+        # Call the function to approve and process the transfer
+        success = await approve_and_process_transfer(request_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=400, 
+                detail="Failed to process team transfer request"
+            )
+            
+        return {
+            "success": True,
+            "message": "Team transfer request approved and processed successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error approving team transfer request: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing team transfer request: {str(e)}"
+        ) 

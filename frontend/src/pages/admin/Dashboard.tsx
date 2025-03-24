@@ -12,7 +12,9 @@ import {
   DollarSign,
   UserCheck,
   Shield,
-  User2
+  User2,
+  Home,
+  AlertCircle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../../lib/supabase';
@@ -72,6 +74,21 @@ function AdminDashboard() {
   // Only show dashboard content on the main admin route
   const showDashboard = location.pathname === '/admin';
 
+  const navigationItems = [
+    { name: 'Dashboard', icon: Home, href: '/admin' },
+    { name: 'Users', icon: Users, href: '/admin/users' },
+    { name: 'Teams', icon: Users, href: '/admin/teams' },
+    { name: 'Tournaments', icon: Trophy, href: '/admin/tournaments' },
+    { name: 'Leagues', icon: Trophy, href: '/admin/leagues' },
+    { name: 'Players', icon: User2, href: '/admin/players' },
+    { name: 'Games', icon: GamepadIcon, href: '/admin/games' },
+    { name: 'News', icon: Newspaper, href: '/admin/news' },
+    { name: 'Sponsors', icon: DollarSign, href: '/admin/sponsors' },
+    { name: 'Requests', icon: AlertCircle, href: '/admin/requests' },
+    { name: 'Site Content', icon: BarChart2, href: '/admin/site-content' },
+    { name: 'Settings', icon: Settings, href: '/admin/settings' },
+  ];
+
   return (
     <div className="bg-gray-900 min-h-screen">
       {/* Admin Header */}
@@ -95,94 +112,20 @@ function AdminDashboard() {
         {/* Sidebar Navigation */}
         <div className="w-64 bg-gray-800 min-h-screen p-4">
           <nav className="space-y-2">
-            <Link
-              to="/admin"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <BarChart2 className="w-5 h-5" />
-              <span>Dashboard</span>
-            </Link>
-            <Link
-              to="/admin/users"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/users'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Users className="w-5 h-5" />
-              <span>Users</span>
-            </Link>
-            <Link
-              to="/admin/leagues"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/leagues'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Calendar className="w-5 h-5" />
-              <span>League Management</span>
-            </Link>
-            <Link
-              to="/admin/tournaments"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/tournaments'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Trophy className="w-5 h-5" />
-              <span>Tournaments</span>
-            </Link>
-            <Link
-              to="/admin/teams"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/teams'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Users className="w-5 h-5" />
-              <span>Teams</span>
-            </Link>
-            <Link
-              to="/admin/games"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/games'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <GamepadIcon className="w-5 h-5" />
-              <span>Games</span>
-            </Link>
-            <Link
-              to="/admin/news"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/news'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Newspaper className="w-5 h-5" />
-              <span>News & Updates</span>
-            </Link>
-            <Link
-              to="/admin/settings"
-              className={`flex items-center space-x-2 p-2 rounded-lg ${
-                location.pathname === '/admin/settings'
-                  ? 'bg-green-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              <span>Settings</span>
-            </Link>
+            {navigationItems.map((item) => (
+              <Link
+                key={item.name}
+                to={item.href}
+                className={`flex items-center space-x-2 p-2 rounded-lg ${
+                  location.pathname === item.href
+                    ? 'bg-green-700 text-white'
+                    : 'text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                <item.icon className="w-5 h-5" />
+                <span>{item.name}</span>
+              </Link>
+            ))}
           </nav>
         </div>
 

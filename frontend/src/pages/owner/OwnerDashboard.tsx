@@ -14,7 +14,8 @@ import {
   Shield,
   User2,
   Package,
-  Home
+  Home,
+  AlertCircle
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -66,6 +67,7 @@ const OwnerDashboard = () => {
     { name: 'Leagues', icon: Trophy, href: '/owner/leagues' },
     { name: 'Items', icon: Package, href: '/owner/items' },
     { name: 'Sponsors', icon: DollarSign, href: '/owner/sponsors' },
+    { name: 'Requests', icon: AlertCircle, href: '/owner/requests' },
     { name: 'Admin Management', icon: Shield, href: '/owner/admins' },
     { name: 'Site Content', icon: BarChart2, href: '/owner/site-content' },
     { name: 'Settings', icon: Settings, href: '/owner/settings' },
