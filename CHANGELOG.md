@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2024-05-24
+
+### Webhook Handler Improvements
+- Fixed Square webhook handling for team transfers to properly process completed payments
+- Resolved team transfer webhook issues by properly handling Supabase API responses
+- Added direct RPC calls to admin_transfer_team_ownership function in webhook handler
+- Improved error handling and status tracking for webhook processing
+- Enhanced request status updates with better metadata and error tracking
+- Added comprehensive logging throughout webhook processing pipeline
+- Fixed issues with APIResponse handling in async functions
+- Created testing framework for webhook handler with pytest-asyncio support
+- Added mock tests for Square webhook processing and team transfer execution
+- Improved extraction of request IDs from payment references
+
+### Payment Processing Enhancements
+- Fixed metadata structure preservation in payment processing
+- Ensured consistent payment request handling across different API endpoints
+- Fixed database integration for payment records with proper metadata structure
+- Added error handling for payment processing to gracefully handle failures
+- Enhanced payment reference ID generation and tracking
+
 ## [1.9.0] - 2024-05-15
 
 ### Centralized Request System
