@@ -4,24 +4,29 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
-      - "3000:80"
+      - "3000:3000"
     depends_on:
       - backend
     environment:
       - VITE_API_URL=http://localhost:8000
-    restart: unless-stopped
-    networks:
-      - mgl-network
+      - VITE_SQUARE_APP_ID=${VITE_SQUARE_APP_ID}
+      - VITE_SQUARE_LOCATION_ID=${VITE_SQUARE_LOCATION_ID}
+      - VITE_SQUARE_ENVIRONMENT=${SQUARE_ENVIRONMENT:-sandbox}
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    command: npm run dev
+    networks:
+      - mgl-network
 
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "8000:8000"
     environment:
@@ -31,13 +36,13 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/mgl}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       - db
     networks:
       - mgl-network
-    volumes:
-      - ./backend:/app
     
   ngrok:
     image: ngrok/ngrok:latest
@@ -61,7 +66,6 @@ services:
       - POSTGRES_DB=mgl
     ports:
       - "5432:5432"
-    restart: unless-stopped
     networks:
       - mgl-network
 

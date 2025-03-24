@@ -12,3 +12,4 @@ alembic==1.12.1
 supabase==1.0.3
 httpx==0.23.3
 pytest-asyncio==0.25.3
+pyngrok==7.1.6

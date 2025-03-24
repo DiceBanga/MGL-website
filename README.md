@@ -15,6 +15,7 @@ The MGL Website is a full-stack application built with React, TypeScript, and Py
 - Real-time updates and notifications
 - Comprehensive testing suite for payment integration
 - Detailed logging and error handling
+- Request management system for approving team transfers and changes
 
 ## Project Structure
 
@@ -35,6 +36,7 @@ Contains all server-side code:
 - API routes
 - Testing utilities (in the `tests` directory)
 - Environment configuration
+- Request processing scripts and utilities
 
 ## Technology Stack
 
@@ -49,6 +51,7 @@ Contains all server-side code:
 ### Backend
 - Python FastAPI
 - SQLAlchemy ORM
+- Supabase for database integration
 - Square Python SDK
 - PostgreSQL database
 - Pydantic for data validation
@@ -61,6 +64,7 @@ Contains all server-side code:
 - Python (v3.9 or higher)
 - PostgreSQL
 - Square Developer Account
+- Ngrok authtoken (for webhook development)
 
 ### Docker Setup (Recommended)
 1. Make sure you have Docker and Docker Compose installed on your system.
@@ -78,6 +82,9 @@ Contains all server-side code:
    # Supabase Configuration
    SUPABASE_URL=your_supabase_project_url
    SUPABASE_ANON_KEY=your_supabase_anon_key
+   
+   # Ngrok for webhook testing
+   NGROK_AUTHTOKEN=your_ngrok_authtoken
    ```
 
 3. Build and start the containers:
@@ -89,6 +96,7 @@ Contains all server-side code:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
+   - Ngrok Web Interface: http://localhost:4040
 
 ### Manual Setup
 
@@ -134,6 +142,9 @@ Contains all server-side code:
    # Supabase Configuration (required for team management features)
    SUPABASE_URL=your_supabase_project_url
    SUPABASE_ANON_KEY=your_supabase_anon_key
+   
+   # Ngrok for webhook testing
+   NGROK_AUTHTOKEN=your_ngrok_authtoken
    ```
 
 ## Operation
@@ -147,9 +158,6 @@ Contains all server-side code:
    
    # Alternative method:
    npm run backend:dev
-   
-   # Not recommended (may cause import issues):
-   # uvicorn backend.main:app --reload
    ```
 
 2. In a new terminal, start the frontend development server:
@@ -161,6 +169,36 @@ Contains all server-side code:
    ```
 
 3. Access the application at `http://localhost:3000`
+
+### Using Ngrok for Webhook Development
+
+1. For testing webhooks locally, you can use ngrok which is included in the Docker setup:
+   ```bash
+   # With Docker
+   docker-compose up ngrok
+   ```
+
+2. Or if you're running manually:
+   ```bash
+   ngrok http 8000
+   ```
+
+3. Visit the ngrok web interface at `http://localhost:4040` to see your public URL and incoming requests.
+
+4. Configure your Square webhooks to point to your ngrok URL (e.g., `https://abc123.ngrok.io/api/webhook/square`).
+
+### Managing Team Requests
+
+The application includes a comprehensive request management system accessible via:
+- Admin Dashboard: `/admin/requests`
+- Owner Dashboard: `/owner/requests`
+
+These pages allow administrators and owners to:
+- View pending team change requests
+- Approve team transfers and other changes
+- Filter requests by type and status
+- Search for specific requests
+- Process requests in bulk
 
 ### Running Tests
 
@@ -317,3 +355,81 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Docker Development Environment
+
+For a more convenient development experience, we've set up a dedicated development Docker Compose configuration.
+
+### Using Docker Development Mode
+
+1. Start the development environment:
+   ```bash
+   docker-compose -f docker-compose.dev.yaml up --build
+   ```
+
+2. This setup includes:
+   - Hot reloading for frontend and backend
+   - Volume mapping for real-time code changes
+   - Ngrok for webhook testing
+   - PostgreSQL database with persistent data
+
+3. Access the development services:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+   - Ngrok Web Interface: http://localhost:4040
+
+4. When using ngrok for webhook development, copy the public URL from the ngrok dashboard (e.g., `https://abc123.ngrok.io`) and use it to configure your payment provider's webhook settings.
+
+### Square Webhook Setup
+
+1. Log in to your Square Developer Dashboard
+2. Navigate to your application settings
+3. Go to the Webhooks section
+4. Add a webhook with your ngrok URL (e.g., `https://abc123.ngrok.io/api/webhook/square`)
+5. Select the webhook events you want to subscribe to (payments, refunds, etc.)
+6. Save your webhook configuration
+
+## Request Management System
+
+The application includes a comprehensive request management system to handle various team-related actions such as team transfers, roster changes, and team rebranding.
+
+### Key Features
+
+- **Request Dashboard**: Accessible to admins and owners through `/admin/requests` and `/owner/requests`
+- **Filtering and Search**: Filter requests by type, status, or search by ID and other attributes
+- **Bulk Processing**: Select multiple requests to approve in a single action
+- **Status Tracking**: Visual indicators for each status (pending, approved, processing, completed, failed)
+- **Detailed Information**: View complete request details including metadata
+
+### Request Types
+
+The system handles various types of requests:
+
+1. **Team Transfers**: Change of team ownership from one captain to another
+2. **Team Rebranding**: Updating a team's name and other details
+3. **Roster Changes**: Adjusting player roles or adding/removing players
+4. **Online ID Changes**: Updating player online IDs for various games
+
+### Processing Flow
+
+1. Requests are created when users initiate actions through the UI
+2. Payments (if required) are processed using Square
+3. Request records are stored in the database with 'pending' status
+4. Admin/Owner approves the request through the dashboard
+5. Backend processes the request using appropriate functions
+6. Request status is updated to 'completed' when successful
+
+### Manual Processing
+
+For special cases or troubleshooting, the system includes utility scripts:
+
+```bash
+# Process a specific team transfer
+python scripts/approve_transfer.py --request-id YOUR_REQUEST_ID
+
+# Process all pending team transfers
+python scripts/process_pending_transfers.py --all
+```
+
+These scripts are particularly useful for troubleshooting payment webhooks or handling special cases.
