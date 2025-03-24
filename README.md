@@ -66,25 +66,42 @@ Contains all server-side code:
 - Square Developer Account
 - Ngrok authtoken (for webhook development)
 
+### Environment Configuration
+
+The project includes example environment files (`.env.example`) that list all required environment variables:
+
+1. Copy the example files to create your actual environment files:
+   ```bash
+   # Root directory environment file
+   cp .env.example .env
+   
+   # Frontend environment file (if running separately)
+   cp frontend/.env.example frontend/.env
+   
+   # Backend environment file (if running separately)
+   cp backend/.env.example backend/.env
+   ```
+
+2. Edit each `.env` file and replace the placeholder values with your actual credentials:
+   - Square API credentials from your Square Developer Dashboard
+   - Database connection details
+   - Supabase project credentials
+   - Ngrok authtoken for webhook testing
+
+3. Important environment variables:
+   - `SQUARE_ACCESS_TOKEN`: Your Square API access token
+   - `SQUARE_LOCATION_ID`: Your Square location ID
+   - `SUPABASE_URL`: URL of your Supabase project
+   - `SUPABASE_ANON_KEY`: Anonymous key for Supabase client
+   - `NGROK_AUTHTOKEN`: Your ngrok authentication token
+
 ### Docker Setup (Recommended)
 1. Make sure you have Docker and Docker Compose installed on your system.
 
-2. Create a `.env` file in the root directory with required environment variables:
-   ```env
-   # Square Configuration
-   SQUARE_ACCESS_TOKEN=your_square_access_token
-   SQUARE_LOCATION_ID=your_square_location_id
-   SQUARE_ENVIRONMENT=sandbox
-   
-   # Database Configuration
-   DATABASE_URL=postgresql://postgres:postgres@db:5432/mgl
-   
-   # Supabase Configuration
-   SUPABASE_URL=your_supabase_project_url
-   SUPABASE_ANON_KEY=your_supabase_anon_key
-   
-   # Ngrok for webhook testing
-   NGROK_AUTHTOKEN=your_ngrok_authtoken
+2. Copy the example environment file and configure it:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual credentials
    ```
 
 3. Build and start the containers:
@@ -92,7 +109,12 @@ Contains all server-side code:
    docker-compose up --build
    ```
 
-4. Access the application:
+4. For development with hot-reloading:
+   ```bash
+   docker-compose -f docker-compose.dev.yaml up --build
+   ```
+
+5. Access the application:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
@@ -112,11 +134,10 @@ Contains all server-side code:
    npm install
    ```
 
-3. Create a `.env` file in the root directory:
-   ```env
-   VITE_SQUARE_APP_ID=your_square_app_id
-   VITE_SQUARE_LOCATION_ID=your_square_location_id
-   VITE_SQUARE_ENVIRONMENT=sandbox
+3. Create environment file from the example:
+   ```bash
+   cp frontend/.env.example frontend/.env
+   # Edit frontend/.env with your actual frontend credentials
    ```
 
 #### Backend Setup
@@ -132,19 +153,10 @@ Contains all server-side code:
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the backend directory:
-   ```env
-   SQUARE_ACCESS_TOKEN=your_square_access_token
-   SQUARE_LOCATION_ID=your_square_location_id
-   SQUARE_ENVIRONMENT=sandbox
-   DATABASE_URL=postgresql://user:password@localhost/dbname
-   
-   # Supabase Configuration (required for team management features)
-   SUPABASE_URL=your_supabase_project_url
-   SUPABASE_ANON_KEY=your_supabase_anon_key
-   
-   # Ngrok for webhook testing
-   NGROK_AUTHTOKEN=your_ngrok_authtoken
+3. Create environment file from the example:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual backend credentials
    ```
 
 ## Operation
@@ -362,24 +374,30 @@ For a more convenient development experience, we've set up a dedicated developme
 
 ### Using Docker Development Mode
 
-1. Start the development environment:
+1. Copy the example environment file and configure it:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual credentials
+   ```
+
+2. Start the development environment:
    ```bash
    docker-compose -f docker-compose.dev.yaml up --build
    ```
 
-2. This setup includes:
+3. This setup includes:
    - Hot reloading for frontend and backend
    - Volume mapping for real-time code changes
    - Ngrok for webhook testing
    - PostgreSQL database with persistent data
 
-3. Access the development services:
+4. Access the development services:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
    - Ngrok Web Interface: http://localhost:4040
 
-4. When using ngrok for webhook development, copy the public URL from the ngrok dashboard (e.g., `https://abc123.ngrok.io`) and use it to configure your payment provider's webhook settings.
+5. When using ngrok for webhook development, copy the public URL from the ngrok dashboard (e.g., `https://abc123.ngrok.io`) and use it to configure your payment provider's webhook settings.
 
 ### Square Webhook Setup
 
