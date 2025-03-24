@@ -49,17 +49,15 @@ async def process_single_transfer(request_id: str):
     
     try:
         # Get request details
-        response = await supabase.table("team_change_requests").select("*").eq("id", request_id).execute()
+        response = supabase.table("team_change_requests").select("*").eq("id", request_id).execute()
         
-        if response.error:
-            logger.error(f"Error retrieving request {request_id}: {response.error}")
-            return False
-        
-        if not response.data or len(response.data) == 0:
+        # Check if data is available
+        data = getattr(response, 'data', None)
+        if not data or len(data) == 0:
             logger.error(f"Request with ID {request_id} not found")
             return False
         
-        request = response.data[0]
+        request = data[0]
         
         # Verify this is a team transfer request
         if request.get('request_type') != 'team_transfer':
@@ -74,47 +72,75 @@ async def process_single_transfer(request_id: str):
         # Get required parameters
         team_id = request.get('team_id')
         new_captain_id = request.get('new_value')
+        old_captain_id = request.get('old_value')  # Get old captain ID
         
-        if not team_id or not new_captain_id:
-            logger.error(f"Missing required parameters: team_id={team_id}, new_captain_id={new_captain_id}")
+        if not team_id or not new_captain_id or not old_captain_id:
+            logger.error(f"Missing required parameters: team_id={team_id}, new_captain_id={new_captain_id}, old_captain_id={old_captain_id}")
             return False
         
         # Execute the team transfer
-        logger.info(f"Executing team transfer: team_id={team_id}, new_captain_id={new_captain_id}")
+        logger.info(f"Executing team transfer: team_id={team_id}, new_captain_id={new_captain_id}, old_captain_id={old_captain_id}")
+        
+        # Update request status to processing
+        update_result = supabase.table("team_change_requests").update({
+            "status": "processing",
+            "updated_at": datetime.now().isoformat()
+        }).eq("id", request_id).execute()
+        
+        # Continue even if update fails
         
         # Call the admin_transfer_team_ownership function
-        rpc_result = await supabase.rpc(
-            'admin_transfer_team_ownership',
-            {
-                'team_id': team_id,
-                'new_captain_id': new_captain_id
-            }
-        ).execute()
-        
-        if rpc_result.error:
-            logger.error(f"Error executing team transfer: {rpc_result.error}")
+        try:
+            # Execute the RPC with correct parameter names
+            rpc_result = supabase.rpc(
+                'admin_transfer_team_ownership',
+                {
+                    'p_team_id': team_id,
+                    'p_new_captain_id': new_captain_id,
+                    'p_old_captain_id': old_captain_id
+                }
+            ).execute()
+            
+            # Check for errors in RPC result
+            rpc_error = getattr(rpc_result, 'error', None)
+            if rpc_error:
+                logger.error(f"Error executing team transfer: {rpc_error}")
+                
+                # Update request with error
+                error_update = supabase.table("team_change_requests").update({
+                    "status": "failed",
+                    "last_error": str(rpc_error),
+                    "processing_attempts": request.get('processing_attempts', 0) + 1
+                }).eq("id", request_id).execute()
+                
+                return False
+            
+            logger.info(f"Team transfer executed successfully")
+            
+        except Exception as e:
+            logger.error(f"Exception during team transfer execution: {str(e)}")
             
             # Update request with error
-            update_result = await supabase.table("team_change_requests").update({
+            error_update = supabase.table("team_change_requests").update({
                 "status": "failed",
-                "last_error": str(rpc_result.error),
+                "last_error": str(e),
                 "processing_attempts": request.get('processing_attempts', 0) + 1
             }).eq("id", request_id).execute()
-            
-            if update_result.error:
-                logger.error(f"Error updating request status to failed: {update_result.error}")
             
             return False
         
         # Update request status to completed
-        update_result = await supabase.table("team_change_requests").update({
+        complete_result = supabase.table("team_change_requests").update({
             "status": "completed",
             "processed_at": datetime.now().isoformat()
         }).eq("id", request_id).execute()
         
-        if update_result.error:
-            logger.error(f"Error updating request status to completed: {update_result.error}")
-            return False
+        # Check for errors in update result, but continue on error
+        complete_error = getattr(complete_result, 'error', None)
+        if complete_error:
+            logger.error(f"Error updating request status to completed: {complete_error}")
+            # Team transfer was successful but status update failed
+            return True
         
         logger.info(f"Successfully processed team transfer request {request_id}")
         return True
@@ -129,17 +155,15 @@ async def process_all_transfers():
     
     try:
         # Get all pending team transfer requests
-        response = await supabase.table("team_change_requests").select("id").eq("request_type", "team_transfer").eq("status", "pending").execute()
+        response = supabase.table("team_change_requests").select("id").eq("request_type", "team_transfer").eq("status", "pending").execute()
         
-        if response.error:
-            logger.error(f"Error retrieving pending team transfers: {response.error}")
-            return False
-        
-        if not response.data or len(response.data) == 0:
+        # Check if data is available
+        data = getattr(response, 'data', None)
+        if not data:
             logger.info("No pending team transfers found")
             return True
         
-        request_ids = [request.get('id') for request in response.data]
+        request_ids = [request.get('id') for request in data]
         logger.info(f"Found {len(request_ids)} pending team transfer requests")
         
         # Process each request
