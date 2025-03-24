@@ -5,9 +5,10 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime
 
-from ..services.request_service import RequestService
-from ..dependencies import get_request_service
+from services.request_service import RequestService
+from dependencies import get_request_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -60,32 +61,52 @@ async def process_request_update(request_id: str, status: str, webhook_data: Dic
         logger.info(f"Processing payment {payment_id} webhook for request {request_id} with status {status}")
         
         # Get the request details
-        request = await request_service.get_request(request_id)
-        
-        if not request:
-            logger.error(f"Request with ID {request_id} not found")
+        try:
+            response = await request_service.supabase.table("team_change_requests").select("*").eq("id", request_id).execute()
+            if response.error:
+                logger.error(f"Error getting request {request_id}: {response.error}")
+                return
+                
+            if not response.data or len(response.data) == 0:
+                logger.error(f"Request with ID {request_id} not found")
+                return
+                
+            request = response.data[0]
+        except Exception as e:
+            logger.error(f"Error fetching request details: {str(e)}")
             return
         
         # Update the payment_id field in the request if it's null but we have a payment_reference
         if request.get('payment_reference') and not request.get('payment_id'):
             try:
-                await request_service.supabase.table("team_change_requests").update({
+                result = await request_service.supabase.table("team_change_requests").update({
                     "payment_id": payment_id
                 }).eq("id", request_id).execute()
-                logger.info(f"Updated payment_id for request {request_id} to {payment_id}")
+                
+                if result.error:
+                    logger.error(f"Error updating payment_id: {result.error}")
+                else:
+                    logger.info(f"Updated payment_id for request {request_id} to {payment_id}")
             except Exception as e:
                 logger.error(f"Error updating payment_id: {str(e)}")
         
         # Update request status
-        await request_service._update_request_status(
-            request_id,
-            status,
-            {
-                "webhook_processed": True,
-                "webhook_data": webhook_data,
-                "payment_id": payment_id
-            }
-        )
+        update_data = {
+            "status": status,
+            "updated_at": datetime.now().isoformat() if 'datetime' in globals() else None,
+            "webhook_data": webhook_data,
+            "payment_id": payment_id
+        }
+        
+        try:
+            status_result = await request_service.supabase.table("team_change_requests").update(update_data).eq("id", request_id).execute()
+            if status_result.error:
+                logger.error(f"Error updating request status: {status_result.error}")
+                return
+            logger.info(f"Successfully updated request {request_id} status to {status}")
+        except Exception as e:
+            logger.error(f"Failed to update request status: {str(e)}")
+            return
         
         # If payment was successful, execute the action
         if status == 'approved' and request.get('status') == 'pending':
@@ -105,14 +126,16 @@ async def process_request_update(request_id: str, status: str, webhook_data: Dic
             if request.get('request_type') == 'team_transfer':
                 request_data["new_captain_id"] = request.get('new_value') or metadata.get('new_captain_id') or metadata.get('newCaptainId')
                 request_data["old_captain_id"] = request.get('old_value') or metadata.get('old_captain_id') or metadata.get('oldCaptainId')
-                logger.info(f"Team Transfer: from {request_data['old_captain_id']} to {request_data['new_captain_id']}")
+                logger.info(f"Team Transfer: from {request_data.get('old_captain_id')} to {request_data.get('new_captain_id')}")
                 
                 # Double-check that we have the old captain ID - critical for transfer
                 if not request_data.get("old_captain_id"):
                     # If it's not in the expected places, try to get it from the teams table
                     try:
                         team_result = await request_service.supabase.table("teams").select("captain_id").eq("id", request_data["team_id"]).execute()
-                        if team_result.data and len(team_result.data) > 0:
+                        if team_result.error:
+                            logger.error(f"Error retrieving team details: {team_result.error}")
+                        elif team_result.data and len(team_result.data) > 0:
                             request_data["old_captain_id"] = team_result.data[0]["captain_id"]
                             logger.info(f"Retrieved old_captain_id from teams table: {request_data['old_captain_id']}")
                     except Exception as e:
@@ -183,16 +206,84 @@ async def process_request_update(request_id: str, status: str, webhook_data: Dic
             # Execute the action
             try:
                 logger.info(f"Executing action for request {request_id}: {request.get('request_type')}")
-                result = await request_service._execute_action(request_data, None)
-                logger.info(f"Action executed successfully: {result}")
-                await request_service._update_request_status(request_id, "completed", result)
+                
+                # For team transfer, directly call the admin function
+                if request.get('request_type') == 'team_transfer':
+                    try:
+                        # Ensure we have valid UUIDs for the team and captain IDs
+                        team_id = request_data.get("team_id")
+                        new_captain_id = request_data.get("new_captain_id")
+                        
+                        if not team_id or not new_captain_id:
+                            raise ValueError(f"Missing required fields for team transfer: team_id={team_id}, new_captain_id={new_captain_id}")
+                        
+                        # Execute the SQL function to transfer team ownership
+                        sql = """
+                        SELECT admin_transfer_team_ownership(
+                            team_id := %s::uuid,
+                            new_captain_id := %s::uuid
+                        );
+                        """
+                        
+                        logger.info(f"Executing team transfer SQL for team {team_id} to new captain {new_captain_id}")
+                        
+                        # Execute the RPC call
+                        rpc_result = await request_service.supabase.rpc(
+                            'admin_transfer_team_ownership',
+                            {
+                                'team_id': team_id,
+                                'new_captain_id': new_captain_id
+                            }
+                        ).execute()
+                        
+                        if rpc_result.error:
+                            logger.error(f"Error executing team transfer: {rpc_result.error}")
+                            raise Exception(f"Team transfer failed: {rpc_result.error}")
+                        
+                        logger.info(f"Team transfer successful: {rpc_result.data}")
+                        
+                        # Mark request as completed
+                        update_result = await request_service.supabase.table("team_change_requests").update({
+                            "status": "completed",
+                            "processed_at": datetime.now().isoformat()
+                        }).eq("id", request_id).execute()
+                        
+                        if update_result.error:
+                            logger.error(f"Error updating request status to completed: {update_result.error}")
+                        else:
+                            logger.info(f"Team transfer request {request_id} marked as completed")
+                        
+                    except Exception as transfer_error:
+                        logger.error(f"Error executing team transfer action: {str(transfer_error)}")
+                        
+                        # Update request with error
+                        error_update_result = await request_service.supabase.table("team_change_requests").update({
+                            "status": "failed",
+                            "last_error": str(transfer_error)
+                        }).eq("id", request_id).execute()
+                        
+                        if error_update_result.error:
+                            logger.error(f"Error updating request with failure: {error_update_result.error}")
+                else:
+                    # For other request types, use the execute_action method
+                    # This needs to be implemented properly
+                    logger.info(f"Request type {request.get('request_type')} not directly supported in webhook handler")
+                    raise NotImplementedError(f"Request type {request.get('request_type')} not implemented in webhook handler")
+                    
             except Exception as e:
                 logger.error(f"Error executing action for request {request_id}: {str(e)}")
-                await request_service._update_request_status(
-                    request_id, 
-                    "failed", 
-                    {"error": str(e)}
-                )
+                
+                # Update request with error
+                try:
+                    error_result = await request_service.supabase.table("team_change_requests").update({
+                        "status": "failed",
+                        "last_error": str(e)
+                    }).eq("id", request_id).execute()
+                    
+                    if error_result.error:
+                        logger.error(f"Error updating request with failure: {error_result.error}")
+                except Exception as update_error:
+                    logger.error(f"Failed to update request failure status: {str(update_error)}")
         else:
             logger.info(f"No action needed for request {request_id} with status {request.get('status')} and payment status {status}")
         
@@ -200,15 +291,19 @@ async def process_request_update(request_id: str, status: str, webhook_data: Dic
         logger.error(f"Error processing webhook for request {request_id}: {str(e)}")
         # Update request with error
         try:
-            await request_service.supabase.table("team_change_requests").update({
+            error_result = await request_service.supabase.table("team_change_requests").update({
                 "status": "failed",
                 "last_error": str(e),
                 "processing_attempts": request.get('processing_attempts', 0) + 1
             }).eq("id", request_id).execute()
+            
+            if error_result.error:
+                logger.error(f"Failed to update request error status: {error_result.error}")
         except Exception as update_error:
             logger.error(f"Failed to update request status: {str(update_error)}")
 
-@router.post("/square")
+@router.post("")  # This will match /api/webhook
+@router.post("/square")  # This will match /api/webhook/square
 async def handle_square_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -251,7 +346,7 @@ async def handle_square_webhook(
         if extracted_id:
             request_id = extracted_id
             reference_source = "extracted_from_reference"
-            logger.info(f"Extracted request_id from payment reference_id: {request_id}")
+            logger.info(f"Extracted request_id from payment reference_id: {extracted_id}")
         
         # 2. Check payment metadata
         elif payment_data.get("metadata"):
@@ -281,7 +376,9 @@ async def handle_square_webhook(
         if not request_id:
             try:
                 payment_ref_result = await request_service.supabase.table("team_change_requests").select("id").eq("payment_reference", payment_id).execute()
-                if payment_ref_result.data and len(payment_ref_result.data) > 0:
+                if payment_ref_result.error:
+                    logger.error(f"Error checking payment reference: {payment_ref_result.error}")
+                elif payment_ref_result.data and len(payment_ref_result.data) > 0:
                     request_id = payment_ref_result.data[0]["id"]
                     reference_source = "team_change_requests.payment_reference"
                     logger.info(f"Found request via payment_reference lookup: {request_id}")
@@ -329,4 +426,4 @@ async def handle_square_webhook(
         
     except Exception as e:
         logger.error(f"Error processing Square webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}") 
+        return {"status": "error", "message": f"Error processing webhook: {str(e)}"} 

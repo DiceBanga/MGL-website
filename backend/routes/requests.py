@@ -4,8 +4,8 @@ from typing import Dict, Any, List, Optional
 import uuid
 
 # Import the dependency to get the RequestService
-from ..dependencies import get_request_service
-from ..services.request_service import RequestService
+from dependencies import get_request_service
+from services.request_service import RequestService
 
 router = APIRouter()
 

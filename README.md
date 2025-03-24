@@ -141,14 +141,15 @@ Contains all server-side code:
 ### Development
 1. Start the backend server:
    ```bash
-   # Run from project root (recommended)
-   uvicorn backend.main:app --reload
-   
-   # Alternative methods (for backward compatibility)
-   npm run backend:dev
-   # or
+   # Run from the backend directory (recommended)
    cd backend
-   uvicorn main:app --reload  # Note: May cause import issues with relative imports
+   uvicorn main:app --reload
+   
+   # Alternative method:
+   npm run backend:dev
+   
+   # Not recommended (may cause import issues):
+   # uvicorn backend.main:app --reload
    ```
 
 2. In a new terminal, start the frontend development server:

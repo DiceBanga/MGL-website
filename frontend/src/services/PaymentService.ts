@@ -30,13 +30,39 @@ export class PaymentService {
         // Continue with payment processing even if DB record fails
       }
       
+      // Create valid metadata structure required by the backend DB validation
+      const validMetadata = {
+        transaction_details: {
+          processor_response: "pending",
+          authorization_code: `pending_${Date.now()}`
+        },
+        payment_method: {
+          type: "square",
+          last_four: "0000"
+        },
+        // Include original metadata fields that match PaymentMetadata type
+        teamId: paymentDetails.teamId,
+        eventId: paymentDetails.eventId,
+        type: paymentDetails.type,
+        request_id: paymentDetails.request_id,
+        playerId: paymentDetails.playerId,
+        playersIds: paymentDetails.playersIds || [],
+        // Store any additional data in a custom field
+        custom_data: {
+          item_id: paymentDetails.item_id,
+          captainId: paymentDetails.captainId,
+          metadata: paymentDetails.metadata
+        }
+      };
+      
       // Create request payload - match the backend's expected format
       const payload = {
         sourceId,
         amount: paymentDetails.amount,
         idempotencyKey: uuidv4(),
         note: paymentDetails.description,
-        referenceId: paymentDetails.referenceId
+        referenceId: paymentDetails.referenceId,
+        metadata: validMetadata // Include properly structured metadata
       };
       
       console.log('Payment params:', payload);

@@ -12,12 +12,12 @@ from supabase import create_client, Client as SupabaseClient
 import pathlib
 
 # Import routes
-from .routes.payments import router as payments_router
-from .routes.requests import router as requests_router
-from .routes.webhooks import router as webhooks_router
+from routes.payments import router as payments_router
+from routes.requests import router as requests_router
+from routes.webhooks import router as webhooks_router
 
 # Import services
-from .services.payment_service import PaymentService
+from services.payment_service import PaymentService
 
 # Configure logging
 logging.basicConfig(
@@ -39,8 +39,8 @@ else:
     print(f".env file NOT found at {env_path}, trying alternative locations")
     # Try alternative locations
     alt_paths = [
-        pathlib.Path.cwd() / 'backend' / '.env',
         pathlib.Path.cwd() / '.env',
+        pathlib.Path.cwd().parent / '.env',
     ]
     for path in alt_paths:
         print(f"Checking for .env at: {path}")
@@ -99,7 +99,35 @@ app.add_middleware(
 # Include routers
 app.include_router(payments_router, prefix="/api", tags=["payments"])
 app.include_router(requests_router, prefix="/api", tags=["requests"])
-app.include_router(webhooks_router, prefix="/api/webhooks", tags=["webhooks"])
+app.include_router(webhooks_router, prefix="/api/webhook", tags=["webhooks"])
+
+# Add a compatibility route for direct /payments access
+@app.post("/payments")
+async def direct_payments_route(request: Request):
+    """
+    Compatibility endpoint to handle direct /payments requests
+    by forwarding them to the /api/payments route
+    """
+    logger.info("Direct /payments endpoint accessed, forwarding to /api/payments")
+    
+    # Get the raw request body
+    body = await request.body()
+    
+    # Forward to the proper route handler
+    from routes.payments import create_payment, PaymentRequest
+    from fastapi.encoders import jsonable_encoder
+    
+    # Parse the request body
+    try:
+        data = json.loads(body)
+        payment_request = PaymentRequest(**data)
+        return await create_payment(payment_request, request)
+    except Exception as e:
+        logger.error(f"Error forwarding payment request: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Payment processing error: {str(e)}"}
+        )
 
 # ------------- HEALTH CHECK ENDPOINTS -------------
 @app.get("/")
@@ -112,7 +140,7 @@ def root():
         "endpoints": {
             "payments": "/api/payments",
             "requests": "/api/team/transfer, /api/team/roster, /api/team/rebrand, /api/team/online-id, /api/team/create, /api/tournament/register, /api/league/register",
-            "webhooks": "/api/webhooks/square",
+            "webhooks": "/api/webhook/square",
             "health": "/ping",
             "debug": "/debug"
         }
@@ -268,12 +296,6 @@ async def test_payment(payment: PaymentRequest):
     }
 
 # ------------- LEGACY ENDPOINTS -------------
-@app.post("/payments")
-async def legacy_payments(request: PaymentRequest):
-    """Legacy endpoint - redirects to main /api/payments endpoint"""
-    logger.warning("Deprecated /payments endpoint accessed, please use /api/payments instead")
-    return await create_payment(request)
-
 @app.post("/api/payments/process")
 async def payments_process(request: PaymentRequest):
     """Legacy process endpoint - redirects to main /api/payments endpoint"""

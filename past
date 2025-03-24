@@ -1,0 +1,62 @@
+Key Changes During Request System Implementation
+Directory Structure Refactoring
+New Route Structure:
+Original structure: /backend/routes/
+New structure: /backend/app/routes/
+Created routing conflicts as both structures were attempted to be supported simultaneously
+API Endpoint Changes
+Path Prefixing:
+Original endpoints: Direct paths like /payments, /payments/test
+New endpoints: Added /api prefix resulting in /api/payments, /api/payments/test
+Attempted to maintain backward compatibility by supporting both path structures
+Router Registration:
+Team Router: 6 routes
+League Router: Initially 0, then added 1 health endpoint
+Tournament Router: 0 routes
+Webhook Router: 1 route
+Auth Router: 0 routes
+Player Router: 1 route
+Team Request Router: 10 routes (all newly added)
+Payments Router: Initially 3 routes, expanded to 6 with compatibility routes
+FastAPI Configuration Changes:
+Updated main.py with title "MGL API"
+Added description "My Gaming League API for team management and payments"
+Added version "1.0.0"
+Implemented detailed route logging and debugging endpoints
+Payment Processing Changes
+Payment Service Refactoring:
+Modified payment route handlers in both old and new structures
+Added compatibility routes in the new structure to handle both URL patterns
+Attempted to standardize payment processing logic between structures
+Frontend Integration Issues:
+Vite proxy configuration set to route to http://localhost:8000
+Frontend attempting to access both old and new API paths
+SquarePaymentService.ts modified to handle Supabase metadata requirements
+Database Integration:
+Payment records were changed to require specific metadata structure for Supabase
+Added error handling for database constraints in payment processing
+Request System Implementation
+New Team Request Router:
+Added 10 new routes for team-related requests
+Implemented endpoints for:
+League registration
+Team creation
+Online ID changes
+Team rebranding
+Roster updates
+Team transfers
+Tournament registration
+Request Status Handling:
+Added endpoints to manage pending requests
+Implemented request retrieval by team ID and request ID
+Debugging Additions
+Debug and Health Endpoints:
+Added /api/_debug/routes to list all registered routes
+Implemented health check endpoints in various routers
+Added logging for route registration and service initialization
+Server Configuration
+Server Startup Changes:
+Modified to handle both routing structures with appropriate error handling
+Added comprehensive logging during startup
+Increased the total routes from approximately 26 to 40
+These changes, particularly the attempt to support both old and new routing structures simultaneously, appear to have led to the current issues with the application. The refactoring attempted to maintain backward compatibility while moving to a new structure, but this created conflicts in how endpoints are registered and accessed.

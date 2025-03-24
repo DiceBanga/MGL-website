@@ -10,7 +10,7 @@ export class SquarePaymentService {
   async createPayment(sourceId: string, paymentDetails: PaymentDetails): Promise<PaymentResult> {
     try {
       console.log('Creating payment with Square...', { sourceId, amount: paymentDetails.amount });
-      console.log('Original payment details:', paymentDetails);
+      console.log('Payment details for processing:', JSON.stringify(paymentDetails, null, 2));
       
       // For team transfers, log additional details
       if (paymentDetails.type === 'team_transfer') {
@@ -28,11 +28,32 @@ export class SquarePaymentService {
 
       if (dbError) {
         console.error('Database error creating payment record:', dbError);
-        // Continue with payment processing even if DB record fails
+        console.log('Continuing with payment processing despite DB record error');
+      } else {
+        console.log('Successfully created payment record:', paymentRecord);
       }
 
       if (!paymentDetails.referenceId) {
         throw new Error('Reference ID is required for payment processing');
+      }
+
+      // Create metadata with exactly the same structure that works for the database
+      const minimalMetadata: Record<string, any> = {
+        "transaction_details": {
+          "processor_response": `pending-${Date.now()}`,
+          "authorization_code": `pending-${Date.now()}`
+        },
+        "payment_method": {
+          "type": "square",
+          "last_four": "0000"
+        },
+        "team_id": paymentDetails.teamId,
+        "event_type": paymentDetails.type
+      };
+      
+      // If we have an event ID, include it
+      if (paymentDetails.eventId) {
+        minimalMetadata["event_id"] = paymentDetails.eventId;
       }
 
       // Create request payload with the provided reference ID
@@ -41,10 +62,20 @@ export class SquarePaymentService {
         amount: paymentDetails.amount,
         idempotencyKey: uuidv4(),
         note: paymentDetails.description,
-        referenceId: paymentDetails.referenceId
+        referenceId: paymentDetails.referenceId,
+        metadata: minimalMetadata, // Use the minimal metadata
+        // Original data is still included separately for backend use
+        originalData: {
+          type: paymentDetails.type,
+          playerId: paymentDetails.playerId,
+          request_id: paymentDetails.request_id,
+          item_id: paymentDetails.item_id,
+          captainId: paymentDetails.captainId,
+          metadata: paymentDetails.metadata
+        }
       };
       
-      console.log('Payment params:', payload);
+      console.log('Payment request payload:', JSON.stringify(payload, null, 2));
       
       // Try the payment endpoints in order
       const possibleEndpoints = [
@@ -122,34 +153,31 @@ export class SquarePaymentService {
         throw new Error('User ID is required for payment recording');
       }
 
-      // Create a metadata object that satisfies the database constraint:
-      // metadata must have transaction_details and payment_method as objects
-      const validMetadata = {
-        transaction_details: {
-          processor_response: "pending",
-          authorization_code: `pending_${Date.now()}`
+      console.log('Raw payment details:', JSON.stringify(paymentDetails, null, 2));
+
+      // Try with the absolute minimal structure from our database query example
+      // This is the exact structure from a successful record
+      const minimalMetadata: Record<string, any> = {
+        "transaction_details": {
+          "processor_response": `pending-${Date.now()}`,
+          "authorization_code": `pending-${Date.now()}`
         },
-        payment_method: {
-          type: "square",
-          last_four: "0000"
+        "payment_method": {
+          "type": "square",
+          "last_four": "0000"
         },
-        // Store the original payment details metadata as a nested object
-        payment_info: {
-          type: paymentDetails.type,
-          teamId: paymentDetails.teamId,
-          captainId: paymentDetails.captainId,
-          playerId: paymentDetails.playerId,
-          request_id: paymentDetails.request_id,
-          item_id: paymentDetails.item_id,
-          referenceId: paymentDetails.referenceId
-        },
-        // Include the original metadata if it exists
-        ...paymentDetails.metadata
+        "team_id": paymentDetails.teamId,
+        "event_type": paymentDetails.type
       };
       
-      console.log('Creating pending payment with valid metadata structure:', validMetadata);
+      // If we have an event ID, include it
+      if (paymentDetails.eventId) {
+        minimalMetadata["event_id"] = paymentDetails.eventId;
+      }
       
-      // Try with valid metadata structure
+      console.log('Using absolute minimal metadata structure:', JSON.stringify(minimalMetadata, null, 2));
+      
+      // Try with the proven minimal structure from the database example
       const result = await supabase
         .from('payments')
         .insert({
@@ -159,15 +187,15 @@ export class SquarePaymentService {
           status: 'pending',
           payment_method: 'square',
           description: paymentDetails.description,
-          metadata: validMetadata,
+          metadata: minimalMetadata,
           reference_id: paymentDetails.referenceId
         })
         .select()
         .single();
         
       if (result.error) {
-        console.log('First attempt failed, trying with minimal metadata structure');
-        // Try with minimal metadata structure - just the required fields
+        console.error('Payment record creation still failed:', result.error);
+        // Let's try with ONLY transaction_details and payment_method
         return await supabase
           .from('payments')
           .insert({
@@ -179,8 +207,8 @@ export class SquarePaymentService {
             description: paymentDetails.description,
             metadata: {
               transaction_details: {
-                processor_response: "pending",
-                authorization_code: `pending_${Date.now()}`
+                processor_response: `pending-${Date.now()}`,
+                authorization_code: `pending-${Date.now()}`
               },
               payment_method: {
                 type: "square",
@@ -214,7 +242,9 @@ export class SquarePaymentService {
         if (!getError && existingRecord && existingRecord.metadata) {
           // Ensure transaction_details and payment_method are preserved
           updates.metadata = {
-            ...updates.metadata,
+            ...existingRecord.metadata, // Preserve all existing metadata fields
+            ...updates.metadata, // Add the new fields
+            // Ensure these required fields are always present
             transaction_details: updates.metadata.transaction_details || 
               existingRecord.metadata.transaction_details,
             payment_method: updates.metadata.payment_method || 
@@ -455,35 +485,26 @@ export class SquarePaymentService {
       const cardBrand = card.card_brand || 'square';
       const lastFour = card.last_4 || '0000';
       
-      // Create a valid metadata structure that will pass validation
-      const validMetadata = {
-        // Required fields for database validation
-        transaction_details: {
-          processor_response: payment.receipt_number || payment.id,
-          authorization_code: payment.id || `auth_${Date.now()}`
+      // Create a minimal valid metadata structure using the exact format that works
+      const minimalMetadata: Record<string, any> = {
+        "transaction_details": {
+          "processor_response": payment.id,
+          "authorization_code": payment.id
         },
-        payment_method: {
-          type: cardBrand.toLowerCase(),
-          last_four: lastFour
+        "payment_method": {
+          "type": cardBrand.toLowerCase(),
+          "last_four": lastFour
         },
-        // Payment details
-        payment_info: {
-          type: paymentDetails.type,
-          teamId: paymentDetails.teamId,
-          captainId: paymentDetails.captainId,
-          playerId: paymentDetails.playerId,
-          request_id: paymentDetails.request_id,
-          item_id: paymentDetails.item_id,
-          referenceId: paymentDetails.referenceId
-        },
-        // Include the original metadata
-        ...paymentDetails.metadata,
-        // Square payment details
-        square_payment_id: payment.id,
-        receipt_url: payment.receipt_url
+        "team_id": paymentDetails.teamId,
+        "event_type": paymentDetails.type
       };
       
-      console.log('Updating payment record with valid metadata:', validMetadata);
+      // If we have an event ID, include it
+      if (paymentDetails.eventId) {
+        minimalMetadata["event_id"] = paymentDetails.eventId;
+      }
+      
+      console.log('Updating payment record with minimal metadata:', JSON.stringify(minimalMetadata, null, 2));
       
       // Find the payment record by reference ID
       const { data: existingPayment, error: findError } = await supabase
@@ -503,7 +524,7 @@ export class SquarePaymentService {
         .update({
           payment_id: payment.id,
           status: 'completed',
-          metadata: validMetadata,
+          metadata: minimalMetadata,
           updated_at: new Date().toISOString()
         })
         .eq('id', existingPayment.id)
