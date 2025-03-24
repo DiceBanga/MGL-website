@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2024-05-30
+
+### Request Management System
+- Added dedicated Requests tab to both AdminPanel and OwnerDashboard
+- Implemented comprehensive RequestsManager component with filtering and search capabilities
+- Added backend API endpoint for approving and processing team transfer requests
+- Fixed team transfer processing by correctly calling team ownership transfer function
+- Created utility scripts for manually processing pending transfers
+- Improved request status tracking with visual indicators for each state
+- Enhanced bulk action capabilities for processing multiple requests
+- Added detailed request descriptions and metadata display
+- Fixed issues with APIResponse handling in async functions for request processing
+- Implemented proper parameter handling for admin_transfer_team_ownership function
+- Added comprehensive error handling for request processing failures
+
 ## [1.10.0] - 2024-05-24
 
 ### Webhook Handler Improvements
