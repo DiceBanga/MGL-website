@@ -20,6 +20,7 @@ import { Team } from '../types/team';
 import { User } from '../types/user';
 import { Player } from '../types/player';
 import { supabase } from '../lib/supabase';
+import RenamingForm from './team-actions/RenamingForm';
 
 // Props type for the TeamActionProcessor component
 interface TeamActionProcessorProps {

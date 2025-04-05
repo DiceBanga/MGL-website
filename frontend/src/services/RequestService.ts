@@ -317,4 +317,53 @@ export class RequestService {
       return [];
     }
   }
+  // Method to fetch detailed tournament info
+  async fetchTournamentDetails(tournamentId: string): Promise<any> {
+    console.log(`Fetching details for tournament ID: ${tournamentId}`);
+    try {
+      // Assuming backend endpoint GET /api/tournaments/{tournamentId} exists
+      const response = await fetch(`${this.apiUrl}/tournaments/${tournamentId}`);
+      if (!response.ok) {
+        // Attempt to parse error details from backend if available
+        let errorDetails = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorDetails = errorData.detail || errorDetails;
+        } catch (e) { /* Ignore JSON parsing error */ }
+        throw new Error(`Failed to fetch tournament details: ${errorDetails}`);
+      }
+      const data = await response.json();
+      console.log("Tournament details fetched:", data);
+      // TODO: Add validation here to ensure data matches expected structure
+      return data;
+    } catch (error) {
+      console.error('Error in fetchTournamentDetails:', error);
+      throw error; // Re-throw to be handled by the calling component
+    }
+  }
+
+  // Method to fetch detailed league info
+  async fetchLeagueDetails(leagueId: string): Promise<any> {
+    console.log(`Fetching details for league ID: ${leagueId}`);
+    try {
+      // Assuming backend endpoint GET /api/leagues/{leagueId} exists
+      const response = await fetch(`${this.apiUrl}/leagues/${leagueId}`);
+      if (!response.ok) {
+         // Attempt to parse error details from backend if available
+        let errorDetails = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorDetails = errorData.detail || errorDetails;
+        } catch (e) { /* Ignore JSON parsing error */ }
+        throw new Error(`Failed to fetch league details: ${errorDetails}`);
+      }
+      const data = await response.json();
+      console.log("League details fetched:", data);
+      // TODO: Add validation here to ensure data matches expected structure
+      return data;
+    } catch (error) {
+      console.error('Error in fetchLeagueDetails:', error);
+      throw error; // Re-throw to be handled by the calling component
+    }
+  }
 }

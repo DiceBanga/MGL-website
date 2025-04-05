@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'; // Add useMemo
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
@@ -8,6 +8,10 @@ import { createPaymentDetails } from '../../utils/paymentUtils';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 import { v4 as uuidv4 } from 'uuid';
 import TeamActionProcessor from '../../components/TeamActionProcessor';
+import EventRulesModal from '../../components/modals/EventRulesModal';
+import RegistrationSummaryModal from '../../components/modals/RegistrationSummaryModal';
+import PlayerSelectionForm from '../../components/registration/PlayerSelectionForm';
+import { RequestService } from '../../services/RequestService'; // Use named import as suggested by TS error
 
 // UI-specific interface that matches the team_players table structure
 interface TeamMemberUI {
@@ -45,6 +49,8 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 const TeamDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const requestService = useMemo(() => new RequestService(), []); // Instantiate the service
+
   const [team, setTeam] = useState<TeamUI | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +92,280 @@ const TeamDashboard = () => {
   const [showTournamentRegistrationProcessor, setShowTournamentRegistrationProcessor] = useState(false);
   const [showRosterChangeProcessor, setShowRosterChangeProcessor] = useState(false);
   const [showTeamTransferProcessor, setShowTeamTransferProcessor] = useState(false);
+  // State for new Registration Flow
+  const [currentRegistrationType, setCurrentRegistrationType] = useState<'league' | 'tournament' | null>(null);
+  const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
+
+  const [selectedPlayerDetails, setSelectedPlayerDetails] = useState<any[]>([]); // Add state for full player details
+
+  // --- Registration Flow Handlers ---
+
+  const handleStartTournamentRegistration = async (): Promise<void> => {
+    // TODO: Implement logic to select a specific tournament if multiple are available.
+    // For now, assume we use the first available one.
+    if (availableTournaments.length === 0) {
+      setError("No tournaments currently available for registration.");
+      return;
+    }
+    // TODO: Allow selection if multiple tournaments exist
+    const tournamentToRegister = availableTournaments[0]; // Using the first one for now
+
+    try {
+      setLoading(true); // Indicate loading while fetching details
+      setError(null);
+
+      // Fetch detailed tournament info (rules, dates etc.) - Assuming an endpoint/service exists
+      // Fetch detailed tournament info using RequestService
+      // Assuming RequestService has a method like fetchTournamentDetails
+      // and it returns an object with { id, name, rules, registrationStartDate, startDate, registrationFee }
+      console.log(`Fetching details for tournament ID: ${tournamentToRegister.id}`);
+      const details = await requestService.fetchTournamentDetails(tournamentToRegister.id); // Use instance
+
+      // Add fallback for registrationFee if not returned by API, using itemPrices
+      if (details && details.registrationFee === undefined) {
+          details.registrationFee = tournamentToRegister.payment_amount ?? itemPrices['TOURNAMENT_REGISTRATION'] ?? 25.00;
+      }
+
+      if (!details) {
+        throw new Error("Tournament details could not be loaded.");
+      }
+
+      setSelectedEventDetails(details);
+      setCurrentRegistrationType('tournament');
+      setIsRulesModalOpen(true);
+
+    } catch (err: any) {
+      console.error("Error fetching tournament details:", err);
+      setError(`Failed to load tournament details: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartLeagueRegistration = async (): Promise<void> => {
+     // TODO: Implement similar logic for leagues, allowing selection if multiple exist.
+     if (availableLeagues.length === 0) {
+       setError("No leagues currently available for registration.");
+       return;
+     }
+     const leagueToRegister = availableLeagues[0]; // Using the first one for now
+
+     try {
+       setLoading(true);
+       setError(null);
+       // Fetch league details using RequestService
+       // Assuming RequestService has a method like fetchLeagueDetails
+       // and it returns an object with { id, name, rules, registrationStartDate, startDate, playoffStartDate, registrationFee }
+       console.log(`Fetching details for league ID: ${leagueToRegister.id}`);
+       const details = await requestService.fetchLeagueDetails(leagueToRegister.id); // Use instance
+
+       // Add fallback for registrationFee if not returned by API, using itemPrices
+       if (details && details.registrationFee === undefined) {
+           details.registrationFee = leagueToRegister.payment_amount ?? itemPrices['LEAGUE_REGISTRATION'] ?? 50.00;
+       }
+
+       if (!details) {
+         throw new Error("League details could not be loaded.");
+       }
+
+       setSelectedEventDetails(details);
+       setCurrentRegistrationType('league');
+       setIsRulesModalOpen(true);
+
+     } catch (err: any) {
+       console.error("Error fetching league details:", err);
+       setError(`Failed to load league details: ${err.message}`);
+     } finally {
+       setLoading(false);
+     }
+  };
+  // Handler for confirming rules and showing player selection
+  const handleRulesConfirmed = () => {
+    setIsRulesModalOpen(false);
+    setIsPlayerSelectionVisible(true);
+    // TODO: Add animation logic if desired
+  };
+
+  // Handler for canceling the rules modal
+  const handleRulesCanceled = () => {
+    setIsRulesModalOpen(false);
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+  };
+
+  // Handler for when player selection is complete
+  const handleRosterComplete = async (playerIds: string[]) => { // Make async
+    if (playerIds.length !== 5) {
+        setError("Please select exactly 5 players.");
+        // Potentially show a toast/alert instead of just setting error state
+        return; // Keep player selection open
+    }
+    setSelectedPlayerIds(playerIds); // Store IDs immediately
+
+    // Fetch full player details for the summary modal
+    setLoading(true); // Use main loading state or a dedicated one
+    setError(null);
+    try {
+      console.log("Fetching details for selected players:", playerIds);
+      const { data: playersData, error: playersError } = await supabase
+        .from('players') // Assuming player details are in 'players' table
+        .select('user_id, display_name, avatar_url, online_id') // Select needed fields
+        .in('user_id', playerIds); // Filter by selected IDs
+
+      if (playersError) throw playersError;
+
+      console.log("Fetched player details:", playersData);
+      // Map to ensure structure matches what modal expects, e.g., { id: ..., username: ... }
+      const details = (playersData || []).map(p => ({
+          id: p.user_id,
+          username: p.display_name || `Player ${p.user_id.substring(0,4)}`,
+          // Add other fields if needed by the modal
+      }));
+      setSelectedPlayerDetails(details);
+
+      // Only proceed to summary modal if fetch was successful
+      setIsPlayerSelectionVisible(false);
+      setIsSummaryModalOpen(true);
+
+    } catch (err: any) {
+        console.error("Error fetching selected player details:", err);
+        setError(`Failed to load player details for summary: ${err.message}`);
+        // Don't open summary modal on error
+        setSelectedPlayerDetails([]); // Clear details on error
+    } finally {
+        setLoading(false);
+    }
+  };
+
+   // Handler for canceling the player selection form
+  const handlePlayerSelectionCanceled = () => {
+    setIsPlayerSelectionVisible(false);
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+    setSelectedPlayerIds([]); // Clear selected players
+  };
+
+  // Handler for confirming the summary and proceeding to payment
+  const handleSummaryConfirmed = async () => {
+    setIsSummaryModalOpen(false); // Close summary modal immediately
+    if (!team || !user || !selectedEventDetails || !currentRegistrationType) {
+      setError("Missing required data to proceed with registration.");
+      return;
+    }
+
+    const isTournament = currentRegistrationType === 'tournament';
+    const requestType = isTournament ? 'tournament_registration' : 'league_registration';
+    const eventId = selectedEventDetails.id;
+    const eventName = selectedEventDetails.name;
+    const priceKey = isTournament ? 'TOURNAMENT_REGISTRATION' : 'LEAGUE_REGISTRATION';
+    const defaultPrice = isTournament ? 25.00 : 50.00;
+    const defaultItemId = isTournament ? '1003' : '1004';
+
+    try {
+      setProcessingPayment(true); // Indicate processing START
+      setError(null);
+
+      const price = selectedEventDetails.registrationFee ?? itemPrices[priceKey] ?? defaultPrice;
+      const itemId = itemIds[priceKey] || defaultItemId; // Use fetched item ID if available
+      const requestId = uuidv4();
+
+      console.log(`Starting ${requestType} process:`);
+      console.log(`  Event ID: ${eventId}, Event Name: ${eventName}`);
+      console.log(`  Team ID: ${team.id}, Captain ID: ${user.id}`);
+      console.log(`  Selected Players: ${selectedPlayerIds.join(', ')}`);
+      console.log(`  Price: ${price}, Item ID: ${itemId}, Request ID: ${requestId}`);
+
+      // 1. Create Payment Details
+      const paymentDetails = createPaymentDetails(
+        currentRegistrationType, // 'league' or 'tournament'
+        `${isTournament ? 'Tournament' : 'League'} Registration for ${eventName}`, // More specific description
+        price,
+        `Team: ${team.name}, Event: ${eventName}`, // Note for payment processor
+        { // Data for payment processor metadata & potentially request creation
+          teamId: team.id,
+          captainId: user.id, // Keep captainId if needed by payment processor/backend
+          eventId: eventId,
+          item_id: itemId, // Use the specific item ID
+          playersIds: selectedPlayerIds, // Pass selected players
+          request_id: requestId // Crucial for linking payment and request
+        }
+      );
+
+      // Add metadata specifically structured for the team_change_requests table
+      // This aligns with dev_notes.md structure
+      paymentDetails.metadata = {
+        ...paymentDetails.metadata, // Keep existing payment metadata
+        requestType: requestType, // For backend routing/identification
+        eventName: eventName,
+        teamName: team.name,
+        playerIds: selectedPlayerIds, // Ensure player IDs are here
+        // Nested data specifically for the change request record itself
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: itemId,
+          [isTournament ? 'tournamentId' : 'leagueId']: eventId, // Correctly set event ID field
+          oldValue: '', // Not applicable for registration
+          newValue: eventId, // Store event ID as new value? Or maybe roster? TBD by backend needs.
+          requestId: requestId, // Link back to the request
+          metadata: { // Metadata specific to the request record
+            eventName: eventName,
+            teamName: team.name,
+            playerIds: selectedPlayerIds,
+            requestId: requestId // Redundant but ensures it's present
+          }
+        }
+      };
+
+      console.log("Payment Details:", JSON.stringify(paymentDetails, null, 2));
+
+      // 2. Navigate to Payment Page
+       navigate('/payments', {
+         state: {
+           paymentDetails,
+           // Tell payment page what kind of request to create on success
+           changeRequestType: requestType,
+           // Pass options needed by createTeamChangeRequest on the payment success callback
+           changeRequestOptions: {
+             [isTournament ? 'tournamentId' : 'leagueId']: eventId,
+             metadata: paymentDetails.metadata.changeRequestData.metadata, // Pass nested metadata
+             requestId: requestId, // Pass the generated request ID
+             // playerIds are in metadata, no need to pass separately unless createTeamChangeRequest needs them directly
+           }
+         }
+       });
+
+      // Reset state *after* successful navigation initiation
+      // Note: Actual processing state should be handled based on payment page result
+      // setProcessingPayment(false); // Move this logic
+      setCurrentRegistrationType(null);
+      setSelectedEventDetails(null);
+      setSelectedPlayerIds([]);
+
+    } catch (err: any) {
+      console.error(`Error during ${requestType} confirmation:`, err);
+      setError(`Failed to initiate registration: ${err.message}`);
+      setProcessingPayment(false); // Ensure processing stops on error
+    }
+  };
+
+   // Handler for canceling the summary modal
+  const handleSummaryCanceled = () => {
+    setIsSummaryModalOpen(false);
+    // Reset state to allow restarting the flow cleanly
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+    setSelectedPlayerIds([]);
+    setIsPlayerSelectionVisible(false); // Hide player selection too
+  };
+
+
+  // --- End Registration Flow Handlers ---
+
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [isPlayerSelectionVisible, setIsPlayerSelectionVisible] = useState(false);
+  const [selectedEventDetails, setSelectedEventDetails] = useState<any | null>(null); // Use a more specific type if available
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -325,40 +605,88 @@ const TeamDashboard = () => {
   
   const fetchItemPrices = async () => {
     try {
-      const { data, error } = await supabase
-        .from('items')
-        .select('id, item_id, current_price, item_name')
-        .in('item_name', [
-          'Team Creation', 
-          'Team Transfer', 
-          'Tournament Registration', 
-          'League Registration', 
-          'Roster Change', 
-          'Team Rebrand', 
-          'Gamer Tag Change'
-        ]); 
+      // Fetch prices from the database
+      const { data: priceData, error: priceError } = await supabase
+        .from('item_prices')
+        .select('*');
         
-      if (!error && data) {
-        const prices: {[key: string]: number} = {};
-        const ids: {[key: string]: string} = {};
+      if (priceError) throw priceError;
+      
+      // Transform the data to a more usable format
+      const prices: {[key: string]: number} = {};
+      const ids: {[key: string]: string} = {};
+      
+      priceData?.forEach(item => {
+        // Use uppercase keys with underscores to match with TeamActionProcessor
+        let key = '';
         
-        data.forEach(item => {
-          // Store by item name for easier reference
-          prices[item.item_name] = item.current_price;
-          ids[item.item_name] = item.item_id;
-          
-          // Also store by item_id for backward compatibility
-          prices[item.item_id] = item.current_price;
-        });
+        // Map item names to standardized keys
+        switch(item.name) {
+          case 'Team Rebrand':
+            key = 'TEAM_REBRAND';
+            break;
+          case 'League Registration':
+            key = 'LEAGUE_REGISTRATION';
+            break;
+          case 'Tournament Registration':
+            key = 'TOURNAMENT_REGISTRATION';
+            break;
+          case 'Roster Change':
+            key = 'ROSTER_CHANGE';
+            break;
+          case 'Gamer Tag Change':
+            key = 'ONLINE_ID_CHANGE';
+            break;
+          case 'Team Transfer':
+            key = 'TEAM_TRANSFER';
+            break;
+          default:
+            key = item.name;
+        }
         
-        setItemPrices(prices);
-        setItemIds(ids);
-        console.log('Fetched item data:', data);
-      } else {
-        console.error('Error fetching item prices:', error);
+        prices[key] = item.price;
+        ids[key] = item.id;
+      });
+      
+      // Set default prices if none were fetched
+      if (Object.keys(prices).length === 0) {
+        prices['TEAM_REBRAND'] = 20.00;
+        prices['LEAGUE_REGISTRATION'] = 50.00;
+        prices['TOURNAMENT_REGISTRATION'] = 25.00;
+        prices['ROSTER_CHANGE'] = 10.00;
+        prices['ONLINE_ID_CHANGE'] = 5.00;
+        prices['TEAM_TRANSFER'] = 15.00;
+        
+        ids['TEAM_REBRAND'] = '1006';
+        ids['LEAGUE_REGISTRATION'] = '1004';
+        ids['TOURNAMENT_REGISTRATION'] = '1003';
+        ids['ROSTER_CHANGE'] = '1002';
+        ids['ONLINE_ID_CHANGE'] = '1005';
+        ids['TEAM_TRANSFER'] = '1001';
       }
-    } catch (err) {
-      console.error('Error fetching item prices:', err);
+      
+      setItemPrices(prices);
+      setItemIds(ids);
+    } catch (error) {
+      console.error('Error fetching item prices:', error);
+      // Set default prices if an error occurred
+      setItemPrices({
+        'TEAM_REBRAND': 20.00,
+        'LEAGUE_REGISTRATION': 50.00,
+        'TOURNAMENT_REGISTRATION': 25.00,
+        'ROSTER_CHANGE': 10.00,
+        'ONLINE_ID_CHANGE': 5.00,
+        'TEAM_TRANSFER': 15.00
+      });
+      
+      setItemIds({
+        'TEAM_REBRAND': '1006',
+        'LEAGUE_REGISTRATION': '1004',
+        'TOURNAMENT_REGISTRATION': '1003',
+        'ROSTER_CHANGE': '1002',
+        'ONLINE_ID_CHANGE': '1005',
+        'TEAM_TRANSFER': '1001'
+      });
     }
   };
 
@@ -497,13 +825,13 @@ const TeamDashboard = () => {
       setProcessingPayment(true);
       
       // Get the price from the itemPrices state
-      const price = itemPrices['Team Rebrand'] || 20.00; // Default to 20.00 if not found
+      const price = itemPrices['TEAM_REBRAND'] || 20.00; // Default to 20.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
       
       // Get the item_id from the database
-      const itemId = itemIds['Team Rebrand'] || '1006'; // Use the fetched item_id or default to '1006'
+      const itemId = itemIds['TEAM_REBRAND'] || '1006'; // Use the fetched item_id or default to '1006'
       console.log('Using item ID from database for team rebrand:', itemId);
       
       // Create payment details for team rebranding
@@ -588,13 +916,13 @@ const TeamDashboard = () => {
       const currentOnlineId = player.user?.online_id || 'None';
       
       // Get the price from the itemPrices state
-      const price = itemPrices['Gamer Tag Change'] || 5.00; // Default to 5.00 if not found
+      const price = itemPrices['ONLINE_ID_CHANGE'] || 5.00; // Default to 5.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
       
       // Get the item_id from the database
-      const itemId = itemIds['Gamer Tag Change'] || '1007'; // Use the fetched item_id or default to '1007'
+      const itemId = itemIds['ONLINE_ID_CHANGE'] || '1005'; // Use the fetched item_id or default to '1005'
       console.log('Using item ID from database for online ID change:', itemId);
       
       // Create payment details for online ID change
@@ -687,7 +1015,7 @@ const TeamDashboard = () => {
       const requestId = uuidv4();
       
       // Get the item_id from the database
-      const itemId = itemIds['Tournament Registration'] || '1003'; // Use the fetched item_id or default to '1003'
+      const itemId = itemIds['TOURNAMENT_REGISTRATION'] || '1003'; // Use the fetched item_id or default to '1003'
       console.log('Using item ID from database for tournament registration:', itemId);
       
       // Create payment details for tournament registration
@@ -737,7 +1065,7 @@ const TeamDashboard = () => {
       const requestId = uuidv4();
       
       // Get the item_id from the database
-      const itemId = itemIds['League Registration'] || '1004'; // Use the fetched item_id or default to '1004'
+      const itemId = itemIds['LEAGUE_REGISTRATION'] || '1004'; // Use the fetched item_id or default to '1004'
       console.log('Using item ID from database for league registration:', itemId);
       
       // Create payment details for league registration
@@ -791,14 +1119,14 @@ const TeamDashboard = () => {
       console.log('New Captain Name:', newCaptainName);
       
       // Get the price from the itemPrices state
-      const price = itemPrices['Team Transfer'] || 15.00; // Default to 15.00 if not found
+      const price = itemPrices['TEAM_TRANSFER'] || 15.00; // Default to 15.00 if not found
       
       // Generate a unique request ID - THIS MUST BE USED CONSISTENTLY
       const requestId = uuidv4();
       console.log('Generated Request ID:', requestId);
       
       // Get the item_id from the database
-      const itemId = itemIds['Team Transfer'] || '1002'; // Use the fetched item_id or default to '1002'
+      const itemId = itemIds['TEAM_TRANSFER'] || '1001'; // Use the fetched item_id or default to '1001'
       console.log('Using item ID from database:', itemId);
       
       // Create payment details for team transfer
@@ -880,13 +1208,13 @@ const TeamDashboard = () => {
       setProcessingPayment(true);
       
       // Get the price from the itemPrices state
-      const price = itemPrices['Roster Change'] || 10.00; // Default to 10.00 if not found
+      const price = itemPrices['ROSTER_CHANGE'] || 10.00; // Default to 10.00 if not found
       
       // Generate a unique request ID
       const requestId = uuidv4();
       
       // Get the item_id from the database
-      const itemId = itemIds['Roster Change'] || '1005'; // Use the fetched item_id or default to '1005'
+      const itemId = itemIds['ROSTER_CHANGE'] || '1002'; // Use the fetched item_id or default to '1002'
       console.log('Using item ID from database for player signing:', itemId);
       
       // Create payment details for player signing
@@ -942,54 +1270,39 @@ const TeamDashboard = () => {
 
   // Team Actions Section
   const renderTeamActions = () => {
-    if (!team) return null;
-
+    if (!isCaptain) return null;
+    
     return (
-      <div className="card bg-base-200 shadow-xl mb-6">
-        <div className="card-body">
-          <h2 className="card-title flex justify-between">
-            <span>Team Actions</span>
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            {/* Team Rename Button */}
-            <button 
-              className="btn btn-primary flex items-center justify-start" 
-              onClick={handleEditTeamName}
-            >
-              <Paintbrush className="w-5 h-5 mr-2" />
-              <span>Rename Team</span>
-            </button>
-            
-            {/* Transfer Ownership Button */}
-            <button 
-              className="btn btn-secondary flex items-center justify-start"
-              onClick={() => alert('Transfer ownership not implemented in this view')}
-            >
-              <UserCog className="w-5 h-5 mr-2" />
-              <span>Transfer Ownership</span>
-            </button>
-
-            {/* Add More Team Actions Here */}
-          </div>
-          
-          {/* TeamActionProcessor integration - will be shown when an action is selected */}
-          {showTeamRebrandProcessor && (
-            <div className="mt-4 bg-gray-800 p-4 rounded-lg">
-              <TeamActionProcessor
-                actionType="team_rebrand"
-                teamId={team.id}
-                userId={user?.id || ''}
-                initialValue={team.name}
-                onSuccess={handleRebrandSuccess}
-                onCancel={handleRebrandCancel}
-                onError={setError}
-                requiresPayment={true}
-                paymentAmount={itemPrices['Team Rebrand'] || 20.00}
-              />
-            </div>
-          )}
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <button
+          onClick={processTeamRebrandPayment}
+          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg p-4 flex flex-col items-center justify-center transition-all"
+          disabled={processingPayment}
+        >
+          <Paintbrush className="mb-2" size={24} />
+          <span className="font-medium">Rebrand Team</span>
+          <span className="text-xs mt-1 text-blue-200">${itemPrices['TEAM_REBRAND']?.toFixed(2) || '0.00'}</span>
+        </button>
+        
+        <button
+          onClick={() => setShowTournamentRegistrationProcessor(true)}
+          className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg p-4 flex flex-col items-center justify-center transition-all"
+          disabled={processingPayment}
+        >
+          <Trophy className="mb-2" size={24} />
+          <span className="font-medium">Tournament Registration</span>
+          <span className="text-xs mt-1 text-purple-200">${itemPrices['TOURNAMENT_REGISTRATION']?.toFixed(2) || '0.00'}</span>
+        </button>
+        
+        <button
+          onClick={() => setShowLeagueRegistrationProcessor(true)}
+          className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg p-4 flex flex-col items-center justify-center transition-all"
+          disabled={processingPayment}
+        >
+          <Users className="mb-2" size={24} />
+          <span className="font-medium">League Registration</span>
+          <span className="text-xs mt-1 text-green-200">${itemPrices['LEAGUE_REGISTRATION']?.toFixed(2) || '0.00'}</span>
+        </button>
       </div>
     );
   };
@@ -1016,7 +1329,7 @@ const TeamDashboard = () => {
               onCancel={handleOnlineIdCancel}
               onError={setError}
               requiresPayment={true}
-              paymentAmount={itemPrices['Gamer Tag Change'] || 5.00}
+              paymentAmount={itemPrices['ONLINE_ID_CHANGE'] || 5.00}
             />
           </div>
         </div>
@@ -1025,11 +1338,62 @@ const TeamDashboard = () => {
   };
 
   // Handle success from league registration
-  const handleLeagueRegistrationSuccess = (response: any) => {
-    console.log('League registration successful:', response);
-    setShowLeagueRegistrationProcessor(false);
-    // Refresh team data to show the updated rosters
-    fetchTeamData();
+  const handleLeagueRegistrationSuccess = (data: any) => {
+    console.log('League registration initiated:', data);
+    
+    // Return early if team is null
+    if (!team) {
+      setError('Team data not found');
+      setShowLeagueRegistrationProcessor(false);
+      return;
+    }
+    
+    const createAndProcessRequest = async () => {
+      try {
+        setProcessingPayment(true);
+        
+        // Get the price from the itemPrices state
+        const price = itemPrices['LEAGUE_REGISTRATION'] || 50.00;
+        
+        // Generate a unique request ID
+        const requestId = uuidv4();
+        
+        // Get the item_id from the database
+        const itemId = itemIds['LEAGUE_REGISTRATION'] || '1004';
+        console.log('Using item ID for league registration:', itemId);
+        
+        // Create team change request
+        const result = await createTeamChangeRequest(
+          'league_registration',
+          team.id,
+          user?.id || '',
+          itemId,
+          '', // Payment ID will be added after payment
+          {
+            leagueId: data.league_id,
+            metadata: {
+              league_id: data.league_id,
+              leagueName: data.leagueName,
+              season: data.season,
+              team_id: team.id,
+              team_name: team.name,
+              playerIds: data.playerIds
+            },
+            requestId
+          }
+        );
+        
+        console.log('League registration request created:', result);
+        setShowLeagueRegistrationProcessor(false);
+      } catch (error) {
+        console.error('Error creating league registration request:', error);
+        setError('Failed to create league registration request');
+      } finally {
+        setProcessingPayment(false);
+      }
+    };
+    
+    createAndProcessRequest();
   };
 
   // Handle cancellation of league registration
@@ -1038,11 +1402,61 @@ const TeamDashboard = () => {
   };
 
   // Handle success from tournament registration
-  const handleTournamentRegistrationSuccess = (response: any) => {
-    console.log('Tournament registration successful:', response);
-    setShowTournamentRegistrationProcessor(false);
-    // Refresh team data to show the updated rosters
-    fetchTeamData();
+  const handleTournamentRegistrationSuccess = (data: any) => {
+    console.log('Tournament registration initiated:', data);
+    
+    // Return early if team is null
+    if (!team) {
+      setError('Team data not found');
+      setShowTournamentRegistrationProcessor(false);
+      return;
+    }
+    
+    const createAndProcessRequest = async () => {
+      try {
+        setProcessingPayment(true);
+        
+        // Get the price from the itemPrices state
+        const price = itemPrices['TOURNAMENT_REGISTRATION'] || 25.00;
+        
+        // Generate a unique request ID
+        const requestId = uuidv4();
+        
+        // Get the item_id from the database
+        const itemId = itemIds['TOURNAMENT_REGISTRATION'] || '1003';
+        console.log('Using item ID for tournament registration:', itemId);
+        
+        // Create team change request
+        const result = await createTeamChangeRequest(
+          'tournament_registration',
+          team.id,
+          user?.id || '',
+          itemId,
+          '', // Payment ID will be added after payment
+          {
+            tournamentId: data.tournament_id,
+            metadata: {
+              tournament_id: data.tournament_id,
+              tournamentName: data.tournamentName,
+              team_id: team.id,
+              team_name: team.name,
+              playerIds: data.playerIds
+            },
+            requestId
+          }
+        );
+        
+        console.log('Tournament registration request created:', result);
+        setShowTournamentRegistrationProcessor(false);
+      } catch (error) {
+        console.error('Error creating tournament registration request:', error);
+        setError('Failed to create tournament registration request');
+      } finally {
+        setProcessingPayment(false);
+      }
+    };
+    
+    createAndProcessRequest();
   };
 
   // Handle cancellation of tournament registration
@@ -1065,6 +1479,158 @@ const TeamDashboard = () => {
   
   // Handle success from team transfer
   const handleTeamTransferSuccess = (response: any) => {
+  // --- New Registration Flow Handlers ---
+
+
+  // Handler for confirming rules and showing player selection
+  const handleRulesConfirmed = () => {
+    setIsRulesModalOpen(false);
+    setIsPlayerSelectionVisible(true);
+    // TODO: Add animation logic if desired
+  };
+
+  // Handler for canceling the rules modal
+  const handleRulesCanceled = () => {
+    setIsRulesModalOpen(false);
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+  };
+
+  // Handler for when player selection is complete
+  const handleRosterComplete = (playerIds: string[]) => {
+    if (playerIds.length !== 5) {
+        setError("Please select exactly 5 players.");
+        return; // Keep player selection open
+    }
+    setSelectedPlayerIds(playerIds);
+    setIsPlayerSelectionVisible(false);
+    setIsSummaryModalOpen(true);
+  };
+
+   // Handler for canceling the player selection form
+  const handlePlayerSelectionCanceled = () => {
+    setIsPlayerSelectionVisible(false);
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+    setSelectedPlayerIds([]); // Clear selected players
+  };
+
+  // Handler for confirming the summary and proceeding to payment
+  const handleSummaryConfirmed = async () => {
+    setIsSummaryModalOpen(false); // Close summary modal immediately
+    if (!team || !user || !selectedEventDetails || !currentRegistrationType) {
+      setError("Missing required data to proceed with registration.");
+      return;
+    }
+
+    const isTournament = currentRegistrationType === 'tournament';
+    const requestType = isTournament ? 'tournament_registration' : 'league_registration';
+    const eventId = selectedEventDetails.id;
+    const eventName = selectedEventDetails.name;
+    const priceKey = isTournament ? 'TOURNAMENT_REGISTRATION' : 'LEAGUE_REGISTRATION';
+    const defaultPrice = isTournament ? 25.00 : 50.00;
+    const defaultItemId = isTournament ? '1003' : '1004';
+
+    try {
+      setProcessingPayment(true); // Indicate processing START
+      setError(null);
+
+      const price = selectedEventDetails.registrationFee ?? itemPrices[priceKey] ?? defaultPrice;
+      const itemId = itemIds[priceKey] || defaultItemId; // Use fetched item ID if available
+      const requestId = uuidv4();
+
+      console.log(`Starting ${requestType} process:`);
+      console.log(`  Event ID: ${eventId}, Event Name: ${eventName}`);
+      console.log(`  Team ID: ${team.id}, Captain ID: ${user.id}`);
+      console.log(`  Selected Players: ${selectedPlayerIds.join(', ')}`);
+      console.log(`  Price: ${price}, Item ID: ${itemId}, Request ID: ${requestId}`);
+
+      // 1. Create Payment Details
+      const paymentDetails = createPaymentDetails(
+        currentRegistrationType, // 'league' or 'tournament'
+        `${isTournament ? 'Tournament' : 'League'} Registration for ${eventName}`, // More specific description
+        price,
+        `Team: ${team.name}, Event: ${eventName}`, // Note for payment processor
+        { // Data for payment processor metadata & potentially request creation
+          teamId: team.id,
+          captainId: user.id, // Keep captainId if needed by payment processor/backend
+          eventId: eventId,
+          item_id: itemId, // Use the specific item ID
+          playersIds: selectedPlayerIds, // Pass selected players
+          request_id: requestId // Crucial for linking payment and request
+        }
+      );
+
+      // Add metadata specifically structured for the team_change_requests table
+      // This aligns with dev_notes.md structure
+      paymentDetails.metadata = {
+        ...paymentDetails.metadata, // Keep existing payment metadata
+        requestType: requestType, // For backend routing/identification
+        eventName: eventName,
+        teamName: team.name,
+        playerIds: selectedPlayerIds, // Ensure player IDs are here
+        // Nested data specifically for the change request record itself
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: itemId,
+          [isTournament ? 'tournamentId' : 'leagueId']: eventId, // Correctly set event ID field
+          oldValue: '', // Not applicable for registration
+          newValue: eventId, // Store event ID as new value? Or maybe roster? TBD by backend needs.
+          requestId: requestId, // Link back to the request
+          metadata: { // Metadata specific to the request record
+            eventName: eventName,
+            teamName: team.name,
+            playerIds: selectedPlayerIds,
+            requestId: requestId // Redundant but ensures it's present
+          }
+        }
+      };
+
+      console.log("Payment Details:", JSON.stringify(paymentDetails, null, 2));
+
+      // 2. Navigate to Payment Page
+       navigate('/payments', {
+         state: {
+           paymentDetails,
+           // Tell payment page what kind of request to create on success
+           changeRequestType: requestType,
+           // Pass options needed by createTeamChangeRequest on the payment success callback
+           changeRequestOptions: {
+             [isTournament ? 'tournamentId' : 'leagueId']: eventId,
+             metadata: paymentDetails.metadata.changeRequestData.metadata, // Pass nested metadata
+             requestId: requestId, // Pass the generated request ID
+             // playerIds are in metadata, no need to pass separately unless createTeamChangeRequest needs them directly
+           }
+         }
+       });
+
+      // Reset state *after* successful navigation initiation
+      // Note: Actual processing state should be handled based on payment page result
+      // setProcessingPayment(false); // Move this logic
+      setCurrentRegistrationType(null);
+      setSelectedEventDetails(null);
+      setSelectedPlayerIds([]);
+
+    } catch (err: any) {
+      console.error(`Error during ${requestType} confirmation:`, err);
+      setError(`Failed to initiate registration: ${err.message}`);
+      setProcessingPayment(false); // Ensure processing stops on error
+    }
+  };
+
+   // Handler for canceling the summary modal
+  const handleSummaryCanceled = () => {
+    setIsSummaryModalOpen(false);
+    // Reset state to allow restarting the flow cleanly
+    setCurrentRegistrationType(null);
+    setSelectedEventDetails(null);
+    setSelectedPlayerIds([]);
+    setIsPlayerSelectionVisible(false); // Hide player selection too
+  };
+
+  // --- End New Registration Flow Handlers ---
+
     console.log('Team transfer successful:', response);
     setShowTeamTransferProcessor(false);
     // Usually will navigate away since user is no longer captain
@@ -1222,7 +1788,7 @@ const TeamDashboard = () => {
                       className="w-full text-left px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded flex items-center"
                     >
                       <Paintbrush className="w-4 h-4 mr-2" />
-                      <span>Rebrand Team (${itemPrices['Team Rebrand'] || 10.00})</span>
+                      <span>Rebrand Team (${itemPrices['TEAM_REBRAND'] || 10.00})</span>
                     </button>
                   </div>
                 </div>
@@ -1232,18 +1798,18 @@ const TeamDashboard = () => {
                   <h3 className="text-lg font-semibold text-white mb-3">Registration</h3>
                   <div className="space-y-2">
                     <button 
-                      onClick={() => setShowLeagueRegistrationProcessor(true)}
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleStartLeagueRegistration()} // Explicit event type
                       className="w-full text-left px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded flex items-center"
                     >
                       <Trophy className="w-4 h-4 mr-2" />
-                      <span>League Registration (${itemPrices['League Registration'] || 50.00})</span>
+                      <span>League Registration (${itemPrices['LEAGUE_REGISTRATION'] || 50.00})</span>
                     </button>
                     <button 
-                      onClick={() => setShowTournamentRegistrationProcessor(true)}
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleStartTournamentRegistration()} // Explicit event type
                       className="w-full text-left px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded flex items-center"
                     >
                       <Trophy className="w-4 h-4 mr-2" />
-                      <span>Tournament Registration (${itemPrices['Tournament Registration'] || 25.00})</span>
+                      <span>Tournament Registration (${itemPrices['TOURNAMENT_REGISTRATION'] || 25.00})</span>
                     </button>
                   </div>
                 </div>
@@ -1257,14 +1823,14 @@ const TeamDashboard = () => {
                       className="w-full text-left px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center"
                     >
                       <Users className="w-4 h-4 mr-2" />
-                      <span>Roster Change (${itemPrices['Roster Change'] || 5.00})</span>
+                      <span>Roster Change (${itemPrices['ROSTER_CHANGE'] || 5.00})</span>
                     </button>
                     <button 
                       onClick={() => setShowOnlineIdProcessor(true)}
                       className="w-full text-left px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center"
                     >
                       <RefreshCw className="w-4 h-4 mr-2" />
-                      <span>Online ID Change (${itemPrices['Gamer Tag Change'] || 5.00})</span>
+                      <span>Online ID Change (${itemPrices['ONLINE_ID_CHANGE'] || 5.00})</span>
                     </button>
                   </div>
                 </div>
@@ -1278,7 +1844,7 @@ const TeamDashboard = () => {
                       className="w-full text-left px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded flex items-center"
                     >
                       <UserCog className="w-4 h-4 mr-2" />
-                      <span>Transfer Team (${itemPrices['Team Transfer'] || 15.00})</span>
+                      <span>Transfer Team (${itemPrices['TEAM_TRANSFER'] || 15.00})</span>
                     </button>
                   </div>
                 </div>
@@ -1296,41 +1862,39 @@ const TeamDashboard = () => {
                     onCancel={handleRebrandCancel}
                     onError={setError}
                     requiresPayment={true}
-                    paymentAmount={itemPrices['Team Rebrand'] || 20.00}
+                    paymentAmount={itemPrices['TEAM_REBRAND'] || 20.00}
                   />
                 </div>
               )}
 
+              {/* League Registration Processor */}
               {showLeagueRegistrationProcessor && (
-                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                <div className="mt-6 rounded-lg overflow-hidden">
                   <TeamActionProcessor
                     actionType="league_registration"
                     teamId={team.id}
                     userId={user?.id || ''}
-                    initialValue=""
                     onSuccess={handleLeagueRegistrationSuccess}
                     onCancel={handleLeagueRegistrationCancel}
                     onError={setError}
                     requiresPayment={true}
-                    paymentAmount={itemPrices['League Registration'] || 50.00}
-                    members={team.members}
+                    paymentAmount={itemPrices['LEAGUE_REGISTRATION'] || 50.00}
                   />
                 </div>
               )}
 
+              {/* Tournament Registration Processor */}
               {showTournamentRegistrationProcessor && (
-                <div className="mt-4 bg-gray-800 p-4 rounded-lg">
+                <div className="mt-6 rounded-lg overflow-hidden">
                   <TeamActionProcessor
                     actionType="tournament_registration"
                     teamId={team.id}
                     userId={user?.id || ''}
-                    initialValue=""
                     onSuccess={handleTournamentRegistrationSuccess}
                     onCancel={handleTournamentRegistrationCancel}
                     onError={setError}
                     requiresPayment={true}
-                    paymentAmount={itemPrices['Tournament Registration'] || 25.00}
-                    members={team.members}
+                    paymentAmount={itemPrices['TOURNAMENT_REGISTRATION'] || 25.00}
                   />
                 </div>
               )}
@@ -1346,7 +1910,7 @@ const TeamDashboard = () => {
                     onCancel={handleRosterChangeCancel}
                     onError={setError}
                     requiresPayment={true}
-                    paymentAmount={itemPrices['Roster Change'] || 5.00}
+                    paymentAmount={itemPrices['ROSTER_CHANGE'] || 5.00}
                     members={team.members}
                   />
                 </div>
@@ -1363,7 +1927,7 @@ const TeamDashboard = () => {
                     onCancel={handleTeamTransferCancel}
                     onError={setError}
                     requiresPayment={true}
-                    paymentAmount={itemPrices['Team Transfer'] || 15.00}
+                    paymentAmount={itemPrices['TEAM_TRANSFER'] || 15.00}
                     members={team.members}
                   />
                 </div>
@@ -1545,6 +2109,60 @@ const TeamDashboard = () => {
         onCancel={() => setShowOnlineIdConfirmation(false)}
         type="warning"
       />
+
+      {/* --- New Registration Flow Components --- */}
+
+      {/* Step 1: Show Rules Modal */}
+      <EventRulesModal
+        isOpen={isRulesModalOpen}
+        eventType={currentRegistrationType || 'tournament'} // Default needed, but should be set
+        eventDetails={selectedEventDetails}
+        onConfirm={handleRulesConfirmed}
+        onCancel={handleRulesCanceled}
+      />
+
+      {/* Step 2: Show Player Selection Form (Rendered inline or as a modal overlay) */}
+      {/* Option A: Render inline within the dashboard structure */}
+      {isPlayerSelectionVisible && currentRegistrationType && selectedEventDetails && team && (
+        <div className="mt-6 bg-gray-700 p-4 rounded-lg mb-6">
+           <PlayerSelectionForm
+            eventType={currentRegistrationType}
+            eventDetails={selectedEventDetails}
+            teamId={team.id}
+            onRosterComplete={handleRosterComplete}
+            onCancel={handlePlayerSelectionCanceled}
+          />
+        </div>
+      )}
+      {/* Option B: Render as a modal overlay (uncomment if preferred)
+      <Modal isOpen={isPlayerSelectionVisible} onClose={handlePlayerSelectionCanceled} title={`Select Roster for ${selectedEventDetails?.name}`} size="xl">
+         {currentRegistrationType && selectedEventDetails && team && (
+           <PlayerSelectionForm
+             eventType={currentRegistrationType}
+             eventDetails={selectedEventDetails}
+             teamId={team.id}
+             onRosterComplete={handleRosterComplete}
+             onCancel={handlePlayerSelectionCanceled}
+           />
+         )}
+      </Modal>
+      */}
+
+
+      {/* Step 3: Show Summary Modal */}
+      <RegistrationSummaryModal
+        isOpen={isSummaryModalOpen}
+        eventType={currentRegistrationType || 'tournament'} // Default needed
+        eventDetails={selectedEventDetails}
+        // Pass the fetched full player details
+        // Ensure the structure matches what RegistrationSummaryModal expects (e.g., { id: string, username?: string })
+        selectedPlayers={selectedPlayerDetails}
+        onConfirm={handleSummaryConfirmed}
+        onCancel={handleSummaryCanceled}
+      />
+
+      {/* --- End New Registration Flow Components --- */}
+
 
       <ConfirmationDialog
         isOpen={showRebrandConfirmation}
