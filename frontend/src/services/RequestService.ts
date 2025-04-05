@@ -366,4 +366,76 @@ export class RequestService {
       throw error; // Re-throw to be handled by the calling component
     }
   }
+  /**
+   * Creates a record in the team_change_requests table.
+   * This is typically called after a successful payment.
+   * Sets status to 'processing' to trigger backend execution via database trigger.
+   */
+  async createTeamChangeRequest(params: {
+    requestType: RequestType;
+    teamId: string;
+    requestedBy: string;
+    itemId: string;
+    paymentReference: string; // The actual ID from the payment gateway transaction
+    requestId: string; // The UUID generated before payment, used for linking
+    tournamentId?: string;
+    leagueId?: string;
+    playerId?: string;
+    oldValue?: string;
+    newValue?: string;
+    metadata?: Record<string, any>;
+  }): Promise<any> { // Consider defining a specific return type based on Supabase response
+    const {
+      requestType,
+      teamId,
+      requestedBy,
+      itemId,
+      paymentReference,
+      requestId,
+      tournamentId,
+      leagueId,
+      playerId,
+      oldValue,
+      newValue,
+      metadata
+    } = params;
+
+    console.log(`Creating team change request in DB for request ID: ${requestId}, type: ${requestType}`);
+
+    try {
+      const { data, error } = await supabase
+        .from('team_change_requests')
+        .insert({
+          id: requestId, // Use the pre-generated UUID
+          team_id: teamId,
+          request_type: requestType,
+          requested_by: requestedBy,
+          tournament_id: tournamentId, // Will be null if not provided
+          league_id: leagueId,         // Will be null if not provided
+          player_id: playerId,         // Will be null if not provided
+          old_value: oldValue,         // Will be null if not provided
+          new_value: newValue,         // Will be null if not provided
+          status: 'processing',      // Set status to trigger backend processing
+          payment_id: null,          // Keep null for now, might be updated by webhook?
+          payment_reference: paymentReference, // Store the actual payment gateway ID
+          item_id: itemId,
+          metadata: metadata || {}     // Ensure metadata is at least an empty object
+        })
+        .select() // Select the created record
+        .single(); // Expect only one record
+
+      if (error) {
+        console.error('Supabase error creating team change request:', error);
+        throw error; // Re-throw Supabase error
+      }
+
+      console.log('Team change request created successfully in DB:', data);
+      return data; // Return the created record data
+
+    } catch (err) {
+      console.error('Error in createTeamChangeRequest:', err);
+      // Consider more specific error handling or logging
+      throw err; // Re-throw error to be handled by the caller (e.g., PaymentPage)
+    }
+  }
 }

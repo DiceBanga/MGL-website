@@ -1,56 +1,56 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react'; // Add useMemo
+import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'; // Add useLocation
 import { PaymentService } from '../../services/PaymentService';
+import { RequestService } from '../../services/RequestService'; // Import RequestService (named)
 import { supabase } from '../../lib/supabase';
+import { SquarePaymentForm } from '../../components/SquarePaymentForm'; // Use named import
 
 const PaymentPage: React.FC = () => {
   const { requestId } = useParams<{ requestId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  
-  const [loading, setLoading] = useState(true);
+  const location = useLocation(); // Get location object
+
+  // Instantiate services
+  const paymentService = useMemo(() => new PaymentService(), []);
+  const requestService = useMemo(() => new RequestService(), []);
+
+  // Get data passed via navigation state
+  const {
+    paymentDetails: navPaymentDetails,
+    changeRequestType,
+    changeRequestOptions
+  } = location.state || {};
+
+  const [loading, setLoading] = useState(false); // Start not loading initially
   const [error, setError] = useState<string | null>(null);
-  const [paymentDetails, setPaymentDetails] = useState<any>(null);
+  // State to hold payment details (might combine nav state and fetched state if needed)
+  const [displayDetails, setDisplayDetails] = useState<any>(navPaymentDetails || null);
   
-  // Get request type and amount from URL params
-  const requestType = searchParams.get('type');
-  const amount = searchParams.get('amount');
+  // Get details from navigation state primarily
+  const paymentAmount = navPaymentDetails?.amount;
+  const paymentDescription = navPaymentDetails?.description || `Payment for ${changeRequestType}`;
+  const requestIdFromState = navPaymentDetails?.request_id || changeRequestOptions?.requestId; // Get request ID from state
+
+  // Keep URL params for potential fallback or direct linking? (Decide based on requirements)
+  // const requestIdFromUrl = useParams<{ requestId: string }>().requestId;
+  // const requestTypeFromUrl = searchParams.get('type');
+  // const amountFromUrl = searchParams.get('amount');
   
+  // Remove or adapt useEffect fetching from DB based on requestId from URL.
+  // We primarily rely on the data passed via navigation state now.
+  // If we need to display *existing* request status, we might still fetch,
+  // but the core payment/request creation logic uses the nav state.
   useEffect(() => {
-    const fetchRequestDetails = async () => {
-      if (!requestId) {
-        setError('No request ID provided');
-        setLoading(false);
-        return;
-      }
-      
-      try {
-        // Get request details from the database
-        const { data, error } = await supabase
-          .from('team_change_requests')
-          .select('*')
-          .eq('id', requestId)
-          .single();
-          
-        if (error) {
-          throw new Error(`Failed to fetch request details: ${error.message}`);
-        }
-        
-        if (!data) {
-          throw new Error('Request not found');
-        }
-        
-        setPaymentDetails(data);
-      } catch (err) {
-        console.error('Error fetching request details:', err);
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchRequestDetails();
-  }, [requestId]);
+    // If needed, fetch existing request status using requestIdFromState
+    // For now, we assume the nav state is sufficient to proceed.
+    if (!navPaymentDetails || !changeRequestType || !changeRequestOptions) {
+        setError("Required payment or request details were not provided.");
+        console.error("Missing location state:", location.state);
+    } else {
+        setDisplayDetails(navPaymentDetails); // Use details from navigation
+    }
+  }, [navPaymentDetails, changeRequestType, changeRequestOptions, location.state]);
   
   // Handle successful payment
   const handlePaymentSuccess = () => {
@@ -64,33 +64,62 @@ const PaymentPage: React.FC = () => {
     navigate(-1);
   };
   
-  // For now, this is just a placeholder
-  // In a real implementation, you would integrate with Square or another payment provider
-  const processPayment = async () => {
-    try {
-      setLoading(true);
-      
-      // Simulate payment processing
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Update request status
-      const { error } = await supabase
-        .from('team_change_requests')
-        .update({ status: 'approved', payment_id: 'test-payment-id' })
-        .eq('id', requestId);
-        
-      if (error) {
-        throw new Error(`Failed to update request status: ${error.message}`);
-      }
-      
-      // Show success message and redirect
-      handlePaymentSuccess();
-    } catch (err) {
-      console.error('Error processing payment:', err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
+  // This function is called by SquarePaymentForm on successful payment processing
+  const handlePaymentSuccessAndCreateRequest = async (paymentResult: any) => {
+     // Ensure we have the necessary details from navigation state
+    if (!navPaymentDetails || !changeRequestType || !changeRequestOptions || !requestIdFromState) {
+      setError("Cannot create request: Missing required details passed via navigation.");
+      console.error("Missing state for request creation:", { navPaymentDetails, changeRequestType, changeRequestOptions });
+      // Navigate back or show persistent error?
+      navigate(-1); // Go back if state is missing
+      return;
     }
+
+    setLoading(true); // Indicate request creation processing
+    setError(null);
+
+    try {
+      // Extract the actual payment transaction ID from the result provided by SquarePaymentForm/SquarePaymentService
+      // Adjust 'paymentId' based on the actual structure of paymentResult
+      const paymentReference = paymentResult?.paymentId || paymentResult?.id || `sq_${Date.now()}`;
+      console.log("Payment successful, paymentReference:", paymentReference);
+
+      // Create the Team Change Request via RequestService
+      console.log("Creating team change request via RequestService...");
+      await requestService.createTeamChangeRequest({
+        requestType: changeRequestType,
+        teamId: navPaymentDetails.teamId,
+        requestedBy: navPaymentDetails.captainId, // Assuming captainId is the user ID from paymentDetails
+        itemId: navPaymentDetails.item_id,
+        paymentReference: paymentReference, // Pass the actual transaction ID
+        requestId: requestIdFromState, // Pass the pre-generated request ID
+        tournamentId: changeRequestOptions.tournamentId,
+        leagueId: changeRequestOptions.leagueId,
+        metadata: changeRequestOptions.metadata // Pass the specific metadata for the request record
+      });
+
+      console.log("Team change request created with status 'processing'.");
+
+      // Handle success (e.g., navigate to dashboard or success page)
+      // TODO: Consider navigating to a dedicated success page that shows receipt info
+      navigate('/dashboard', { replace: true, state: { successMessage: `${changeRequestType} request submitted successfully!` } });
+
+    } catch (err: any) {
+      console.error('Error during request creation after successful payment:', err);
+      // If request creation fails after payment, this is a critical state.
+      // Log detailed error, potentially inform user to contact support.
+      setError(`Payment succeeded, but failed to create the request: ${err.message}. Please contact support.`);
+      // Don't navigate away, show the error.
+    } finally {
+      setLoading(false); // Stop loading indicator
+    }
+  };
+
+  // This function is called by SquarePaymentForm on payment failure
+  const handlePaymentError = (error: Error) => {
+      console.error('Payment processing error reported by form:', error);
+      setError(`Payment failed: ${error.message}`);
+      setLoading(false); // Ensure loading stops
   };
   
   if (loading) {
@@ -127,50 +156,55 @@ const PaymentPage: React.FC = () => {
           <h2 className="text-lg font-medium text-white mb-2">Payment Details</h2>
           <div className="bg-gray-700/50 rounded-lg p-4">
             <p className="text-gray-300 mb-2">
-              <span className="font-medium text-white">Type:</span> {requestType}
+              <span className="font-medium text-white">Type:</span> {changeRequestType || 'N/A'} {/* Use state variable */}
             </p>
             <p className="text-gray-300 mb-2">
-              <span className="font-medium text-white">Request ID:</span> {requestId}
+              <span className="font-medium text-white">Request ID:</span> {requestIdFromState || 'N/A'} {/* Use state variable */}
             </p>
             <p className="text-gray-300 mb-4">
-              <span className="font-medium text-white">Amount:</span> ${amount}
+              <span className="font-medium text-white">Amount:</span> ${paymentAmount?.toFixed(2) || '0.00'} {/* Use state variable */}
             </p>
             
-            {paymentDetails && (
+            {/* Display details from the passed paymentDetails object */}
+            {displayDetails && (
               <>
-                <p className="text-gray-300 mb-2">
-                  <span className="font-medium text-white">Team:</span> {paymentDetails.team_id}
-                </p>
-                <p className="text-gray-300">
-                  <span className="font-medium text-white">Status:</span> {paymentDetails.status}
-                </p>
+                {displayDetails.teamId && (
+                   <p className="text-gray-300 mb-2">
+                     <span className="font-medium text-white">Team ID:</span> {displayDetails.teamId}
+                   </p>
+                )}
+                 {displayDetails.description && (
+                   <p className="text-gray-300 mb-2">
+                     <span className="font-medium text-white">Description:</span> {displayDetails.description}
+                   </p>
+                 )}
+                 {/* Add other relevant details from displayDetails if needed */}
               </>
             )}
           </div>
         </div>
         
-        <div className="flex flex-col space-y-3">
-          <button
-            onClick={processPayment}
-            disabled={loading}
-            className="w-full px-4 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 rounded-lg text-white font-medium transition-colors flex items-center justify-center"
-          >
-            {loading ? (
-              <>
-                <span className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></span>
-                Processing...
-              </>
-            ) : (
-              'Process Payment'
-            )}
-          </button>
-          
-          <button
+        {/* Render Square Payment Form */}
+        <div className="mt-6 border-t border-gray-700 pt-6">
+          <h2 className="text-lg font-medium text-white mb-4">Enter Payment Details</h2>
+          {/* Pass paymentDetails from nav state and the success/error handlers */}
+          {displayDetails ? (
+            <SquarePaymentForm
+              paymentDetails={displayDetails} // Pass the full details object
+              onSuccess={handlePaymentSuccessAndCreateRequest} // Call this on successful payment
+              onError={handlePaymentError} // Call this on payment error
+            />
+          ) : (
+             <p className="text-red-500">Cannot load payment form: Payment details are missing.</p>
+          )}
+
+          {/* Keep Cancel button - Note: Form might have its own cancel/back logic */}
+           <button
             onClick={handlePaymentCancel}
-            disabled={loading}
-            className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg text-white transition-colors"
+            disabled={loading} // Disable if overall page is loading
+            className="w-full mt-4 px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg text-white transition-colors"
           >
-            Cancel
+            Cancel Payment
           </button>
         </div>
       </div>

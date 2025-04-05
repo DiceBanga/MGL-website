@@ -16,6 +16,7 @@ import pathlib
 from routes.payments import router as payments_router
 from routes.requests import router as requests_router
 from routes.webhooks import router as webhooks_router
+from routes.events import router as events_router
 
 # Import services
 from services.payment_service import PaymentService
@@ -179,6 +180,7 @@ app.add_middleware(
 app.include_router(payments_router, prefix="/api", tags=["payments"])
 app.include_router(requests_router, prefix="/api", tags=["requests"])
 app.include_router(webhooks_router, prefix="/api/webhook", tags=["webhooks"])
+app.include_router(events_router, prefix="/api", tags=["events"])
 
 # Add a compatibility route for direct /payments access
 @app.post("/payments")
