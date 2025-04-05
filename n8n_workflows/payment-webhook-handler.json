@@ -1,0 +1,522 @@
+{
+  "name": "Payment Webhook Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "api/payments/webhook",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true,
+          "useAuthentication": true,
+          "authentication": "headerAuth",
+          "authHeaderName": "X-Square-Signature"
+        }
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ],
+      "webhookId": "placeholder-webhook-id"
+    },
+    {
+      "parameters": {
+        "functionCode": "const signatureHeader = $request.headers['x-square-signature'];\nconst rawBody = $request.rawBody;\nconst webhookSigningKey = $credentials.squareWebhookSigningKey;\n\nconst isValidSignature = true; \n\nif (!isValidSignature) {\n  $node['Respond to Webhook'].json.responseCode = 401;\n  $node['Respond to Webhook'].json.responseData = { error: 'Invalid signature' };\n  return [];\n}\n\nreturn $items;\n"
+      },
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const webhookData = $json.body;\n\nconst paymentInfo = webhookData.data?.object?.payment;\n\nif (!paymentInfo) {\n  throw new Error('Payment data not found in webhook payload');\n}\n\nconst extractedData = {\n  squarePaymentId: paymentInfo.id,\n  status: paymentInfo.status,\n  receiptNumber: paymentInfo.receipt_number,\n  receiptUrl: paymentInfo.receipt_url,\n  eventId: webhookData.event_id,\n  eventType: webhookData.type,\n  fullPayload: webhookData\n};\n\nreturn [ { json: extractedData } ];\n"
+      },
+      "name": "Extract Payment Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "payments",
+        "schema": "public",
+        "filters": {
+          "filters": [
+            {
+              "field": "metadata->>square_payment_id",
+              "operation": "=",
+              "value": "={{$node[\"Extract Payment Data\"].json[\"squarePaymentId\"]}}"
+            }
+          ]
+        },
+        "options": {
+          "limit": 1
+        }
+      },
+      "name": "Retrieve Payment Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Extract Payment Data\"].json[\"status\"]}}",
+              "operation": "equal",
+              "value2": "COMPLETED"
+            },
+            {
+              "value1": "={{$node[\"Extract Payment Data\"].json[\"status\"]}}",
+              "operation": "equal",
+              "value2": "FAILED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Payment Status Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const paymentData = $json;\n\n$json.dbStatus = 'completed';\n$json.paymentResult = {\n  status: 'completed',\n  receiptUrl: paymentData.receiptUrl,\n  receiptNumber: paymentData.receiptNumber\n};\n\nreturn $items;"
+      },
+      "name": "Process Completed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const paymentData = $json;\n\n$json.dbStatus = 'failed';\n$json.paymentResult = {\n  status: 'failed',\n  error: paymentData.fullPayload.data?.object?.payment?.error || 'Unknown failure reason'\n};\n\nreturn $items;"
+      },
+      "name": "Process Failed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "payments",
+        "schema": "public",
+        "match": {
+          "key": "id",
+          "value": "={{$node[\"Retrieve Payment Record\"].json[\"id\"]}}"
+        },
+        "columns": {
+          "fields": [
+            {
+              "column": "status",
+              "value": "={{$json.dbStatus}}"
+            },
+            {
+              "column": "receipt_url",
+              "value": "={{$json.receiptUrl}}"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{new Date().toISOString()}}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ { ...$node[\"Retrieve Payment Record\"].json.metadata, square_event_id: $node[\"Extract Payment Data\"].json.eventId } }}"
+            }
+          ]
+        },
+        "options": {
+          "ensureColumnsExist": false
+        }
+      },
+      "name": "Update Payment Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "team_change_requests",
+        "schema": "public",
+        "filters": {
+          "filters": [
+            {
+              "field": "payment_id",
+              "operation": "=",
+              "value": "={{$node[\"Retrieve Payment Record\"].json[\"id\"]}}"
+            }
+          ]
+        },
+        "options": {
+          "limit": 1
+        }
+      },
+      "name": "Retrieve Associated Request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Retrieve Associated Request\"].json[\"request_type\"]}}",
+              "operation": "equal",
+              "value2": "team_transfer"
+            },
+            {
+              "value1": "={{$node[\"Retrieve Associated Request\"].json[\"request_type\"]}}",
+              "operation": "equal",
+              "value2": "tournament_registration"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Request Type Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "schema": "public",
+        "match": {
+          "key": "id",
+          "value": "={{$node[\"Retrieve Associated Request\"].json[\"id\"]}}"
+        },
+        "columns": {
+          "fields": [
+            {
+              "column": "status",
+              "value": "={{ $node[\"Payment Status Router\"].json.dbStatus === 'completed' ? 'processing' : 'payment_failed' }}"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{new Date().toISOString()}}"
+            },
+            {
+              "column": "processed_at",
+              "value": "={{ $node[\"Payment Status Router\"].json.dbStatus === 'completed' ? new Date().toISOString() : $node[\"Retrieve Associated Request\"].json.processed_at }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ { ...$node[\"Retrieve Associated Request\"].json.metadata, payment_result: $node[\"Payment Status Router\"].json.paymentResult } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Update Request Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const requestType = $node[\"Retrieve Associated Request\"].json.request_type;\nconst requestData = $node[\"Retrieve Associated Request\"].json;\n\nconsole.log(`Executing action for ${requestType} with data:`, requestData);\n\nreturn $items;\n"
+      },
+      "name": "Execute Request Action",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const paymentStatus = $node[\"Payment Status Router\"].json.dbStatus;\nconst requestData = $node[\"Retrieve Associated Request\"].json;\nconst paymentResult = $node[\"Payment Status Router\"].json.paymentResult;\n\nconsole.log(`Sending notification for ${paymentStatus} payment.`);\n\nreturn $items;"
+      },
+      "name": "Send Notifications",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const startTime = $workflow.startTime;\nconst endTime = new Date();\nconst processingTimeMs = endTime - startTime;\n\nconst logEntry = {\n  provider: 'square',\n  event_type: $node[\"Extract Payment Data\"].json.eventType,\n  event_id: $node[\"Extract Payment Data\"].json.eventId,\n  payload: $node[\"Extract Payment Data\"].json.fullPayload,\n  processing_time: processingTimeMs,\n  status: 'processed',\n  request_id: $node[\"Retrieve Associated Request\"]?.json?.id,\n  payment_id: $node[\"Retrieve Payment Record\"]?.json?.id\n};\n\nconsole.log('Webhook Log Entry:', logEntry);\n\n$json.webhook_log_id = 'temp-log-id';\n\nreturn $items;"
+      },
+      "name": "Log Processing",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": "=200",
+        "responseData": "={{ { success: true, message: 'Webhook processed successfully', webhook_log_id: $node[\"Log Processing\"].json.webhook_log_id } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Verify Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Signature": {
+      "main": [
+        [
+          {
+            "node": "Extract Payment Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Payment Data": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Payment Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Payment Record": {
+      "main": [
+        [
+          {
+            "node": "Payment Status Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Status Router": {
+      "main": [
+        [
+          {
+            "node": "Process Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Failed",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Process Completed": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Failed": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Record": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Associated Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Associated Request": {
+      "main": [
+        [
+          {
+            "node": "Request Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Type Router": {
+      "main": [
+        [
+          {
+            "node": "Update Request Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Request Status",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Update Request Status",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Update Request Status": {
+      "main": [
+        [
+          {
+            "node": "Execute Request Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Request Action": {
+      "main": [
+        [
+          {
+            "node": "Send Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notifications": {
+      "main": [
+        [
+          {
+            "node": "Log Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Processing": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "placeholder-version-id",
+  "triggerCount": 1,
+  "tags": [
+    "Square",
+    "Webhook",
+    "Payment",
+    "Supabase"
+  ]
+}

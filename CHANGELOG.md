@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed issues with APIResponse handling in async functions for request processing
 - Implemented proper parameter handling for admin_transfer_team_ownership function
 - Added comprehensive error handling for request processing failures
+- TODO: Test auto-execute functionality on successful payment for team transfers and other requests
 
 ## [1.10.0] - 2024-05-24
 

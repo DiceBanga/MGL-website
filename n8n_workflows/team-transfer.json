@@ -1,0 +1,740 @@
+{
+  "name": "Team Transfer",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "f96d2cd8-5e36-433e-9672-c483f40cac2d",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// This function validates the input data required for a team transfer\nconst data = $input.all()[0].json;\n\n// Required fields for team transfer\nconst requiredFields = ['team_id', 'new_captain_id', 'request_id'];\nconst missingFields = [];\n\nfor (const field of requiredFields) {\n  if (!data[field]) {\n    missingFields.push(field);\n  }\n}\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      success: false,\n      error: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'failed',\n      request_id: data.request_id || null\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...data,\n    status: 'validating'\n  }\n};"
+      },
+      "id": "bfd8a41e-dd5a-42d0-9a95-6cfd7b69ee88",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "teams",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.team_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d841ec23-e8ea-4a6b-aedb-6edd1ad6f5bf",
+      "name": "Get Team Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data && $json.data.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a2348e40-f5b0-4b3e-bc4c-c16d63a5bcd2",
+      "name": "Team Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "profiles",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.new_captain_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "59a71b9e-e59c-4e88-b8b4-2a9eb42dac17",
+      "name": "Get New Captain Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data && $json.data.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "b1b37e06-b06e-4b32-86cc-5c1ab8dab626",
+      "name": "Captain Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "team_members",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "team_id",
+              "keyValue": "={{ $json.team_id }}",
+              "condition": "equals"
+            },
+            {
+              "keyName": "player_id",
+              "keyValue": "={{ $json.new_captain_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "37fba1ae-c3cf-47a9-9c15-d8b2ac1ad17b",
+      "name": "Check if New Captain in Team",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data && $json.data.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "9fb98c9e-f90b-4267-af7c-7a28bcb63d50",
+      "name": "Is Member?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "teams",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.team_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "captain_id",
+              "value": "={{ $json.new_captain_id }}"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "e41b4e0c-d22e-44bc-97eb-bf05d5f0ab8a",
+      "name": "Update Team Captain",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "status",
+              "value": "completed"
+            },
+            {
+              "column": "completed_at",
+              "value": "={{ $now.toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "2847b87f-7aba-4621-ba0a-a2c471ea4b74",
+      "name": "Update Request Status (Success)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=true"
+            },
+            {
+              "name": "message",
+              "value": "Team transfer completed successfully"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1fd39d5c-eaec-4a55-a5b5-da59b599b8b5",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2250,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "status",
+              "value": "failed"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({error: 'New captain must be a team member'}) }}"
+            }
+          ]
+        }
+      },
+      "id": "22d3a559-c88c-497e-8fa5-bb2d89a95e18",
+      "name": "Update Request Status (Member Error)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=false"
+            },
+            {
+              "name": "error",
+              "value": "New captain must be a team member"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ff9ada21-0f8e-46d9-8fb3-be0df40e5e63",
+      "name": "Member Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "status",
+              "value": "failed"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({error: 'New captain not found'}) }}"
+            }
+          ]
+        }
+      },
+      "id": "de71c1e4-2aca-4b53-974e-4dd14a68da39",
+      "name": "Update Request Status (Captain Error)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=false"
+            },
+            {
+              "name": "error",
+              "value": "New captain not found"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1bd5c71c-8b3c-4ed8-9c67-bf0cea5bb9e8",
+      "name": "Captain Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "status",
+              "value": "failed"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({error: 'Team not found'}) }}"
+            }
+          ]
+        }
+      },
+      "id": "9adb4ef2-3ebb-41ac-bc2c-8f6a9a0f26b0",
+      "name": "Update Request Status (Team Error)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=false"
+            },
+            {
+              "name": "error",
+              "value": "Team not found"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bce7c1b7-d1fe-4f60-8c4b-ebc22b8c4da3",
+      "name": "Team Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "notification-sender"
+      },
+      "id": "8c08c74d-73ee-44bc-9f41-bc37b823cf5c",
+      "name": "Send Success Notification",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2450,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Get Team Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Team Details": {
+      "main": [
+        [
+          {
+            "node": "Team Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Team Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get New Captain Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Request Status (Team Error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Captain Details": {
+      "main": [
+        [
+          {
+            "node": "Captain Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Captain Exists?": {
+      "main": [
+        [
+          {
+            "node": "Check if New Captain in Team",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Request Status (Captain Error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if New Captain in Team": {
+      "main": [
+        [
+          {
+            "node": "Is Member?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Member?": {
+      "main": [
+        [
+          {
+            "node": "Update Team Captain",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Request Status (Member Error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Team Captain": {
+      "main": [
+        [
+          {
+            "node": "Update Request Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Status (Success)": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Response": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Status (Member Error)": {
+      "main": [
+        [
+          {
+            "node": "Member Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Status (Captain Error)": {
+      "main": [
+        [
+          {
+            "node": "Captain Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Status (Team Error)": {
+      "main": [
+        [
+          {
+            "node": "Team Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "staticData": null,
+  "tags": ["Team Management"],
+  "triggerCount": 0,
+  "versionId": "1a2b3c4d-1234-5678-abcd-1234567890ab"
+} 

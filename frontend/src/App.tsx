@@ -58,6 +58,7 @@ import AdminRequests from './pages/admin/Requests';
 
 // Payment Pages
 import Payments from './pages/Payments';
+import PaymentPage from './pages/payment/PaymentPage';
 
 // Owner Pages
 import OwnerDashboard from './pages/owner/OwnerDashboard';
@@ -125,6 +126,10 @@ const router = createBrowserRouter([
       { 
         path: 'payments', 
         element: <AuthGuard requireAuth><Payments /></AuthGuard> 
+      },
+      { 
+        path: 'payment/:requestId', 
+        element: <AuthGuard requireAuth><PaymentPage /></AuthGuard> 
       },
 
       // Admin Routes

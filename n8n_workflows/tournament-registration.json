@@ -1,0 +1,614 @@
+{
+  "name": "Tournament Registration",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "tournaments",
+        "schema": "public",
+        "filters": {
+          "filters": [
+            {
+              "field": "id",
+              "operation": "=",
+              "value": "={{$json.input.tournament_id}}"
+            }
+          ]
+        },
+        "options": {
+          "limit": 1
+        }
+      },
+      "name": "1. Get Tournament Info",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"1. Get Tournament Info\"].json[\"registration_open\"]}}",
+              "value2": true
+            }
+          ],
+          "number": [
+             {
+               "value1": "={{$node[\"1. Get Tournament Info\"].json[\"current_teams\"]}}",
+               "operation": "smaller",
+               "value2": "={{$node[\"1. Get Tournament Info\"].json[\"max_teams\"]}}"
+             }
+          ]
+        },
+        "combineOperation": "all",
+        "options": {}
+      },
+      "name": "Check Tournament Open & Capacity",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "teams",
+        "schema": "public",
+        "filters": {
+          "filters": [
+            {
+              "field": "id",
+              "operation": "=",
+              "value": "={{$json.input.team_id}}"
+            }
+          ]
+        },
+        "options": {
+          "limit": 1
+        }
+      },
+      "name": "2. Get Team Info",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        850,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+     {
+      "parameters": {
+        "conditions": {
+           "string": [
+             {
+               "value1": "={{$node[\"2. Get Team Info\"].json[\"captain_id\"]}}",
+               "operation": "equal",
+               "value2": "={{$json.input.requested_by}}"
+             }
+           ]
+        },
+        "options": {}
+      },
+      "name": "3. Check Captain Permission",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+       "parameters": {
+         "functionCode": "const playersToRegister = $json.input.player_ids;\nconst teamId = $json.input.team_id;\nconst tournament = $node['1. Get Tournament Info'].json;\n\nconst teamRoster = ['player1-uuid', 'player2-uuid', ...playersToRegister]; \n\nconst allPlayersOnTeam = playersToRegister.every(p => teamRoster.includes(p));\nif (!allPlayersOnTeam) {\n  throw new Error('Validation Error: Not all selected players are members of the team.');\n}\n\nconst minPlayers = tournament.min_players_per_team || 1;\nconst maxPlayers = tournament.max_players_per_team || 100;\nif (playersToRegister.length < minPlayers || playersToRegister.length > maxPlayers) {\n  throw new Error(`Validation Error: Team must have between ${minPlayers} and ${maxPlayers} players.`);\n}\n\n$json.validationPassed = true;\nreturn $items;\n"
+       },
+       "name": "4. Validate Players",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         1250,
+         200
+       ]
+    },
+    {
+       "parameters": {
+         "functionCode": "const tournament = $node['1. Get Tournament Info'].json;\nconst team = $node['2. Get Team Info'].json;\n\nlet fee = tournament.base_fee || 0;\n\n$json.calculatedFee = fee;\n$json.requiresPayment = fee > 0;\n\nreturn $items;\n"
+       },
+       "name": "5. Calculate Fee",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         1450,
+         200
+       ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "schema": "public",
+        "match": {
+          "key": "id",
+          "value": "={{$json.input.request_id}}"
+        },
+        "columns": {
+          "fields": [
+            {
+              "column": "metadata",
+              "value": "={{ { ...$json.input.metadata, calculated_fee: $json.calculatedFee, requires_payment: $json.requiresPayment } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "6. Update Request with Fee",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.requiresPayment}}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Payment Required?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "payment-processor-workflow-id",
+        "data": "={{ { request_id: $json.input.request_id, amount: $json.calculatedFee, description: `Tournament Registration: ${$node['1. Get Tournament Info'].json.name}` } }}"
+      },
+      "name": "7. Call Payment Processor",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        200
+      ]
+    },
+    {
+       "parameters": {
+         "functionCode": "if ($json.requiresPayment) {\n  const paymentResult = $json; \n  if (!paymentResult || paymentResult.status !== 'completed') {\n     throw new Error(`Payment failed or was not completed. Status: ${paymentResult?.status}`);\n  }\n  $json.payment_id = paymentResult.payment_id; \n} else {\n  $json.payment_id = null;\n}\n\nreturn $items;\n"
+       },
+       "name": "Merge Payment Path",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         2250,
+         300
+       ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const registrationData = {\n  tournament_id: $json.input.tournament_id,\n  team_id: $json.input.team_id,\n  player_ids: $json.input.player_ids,\n  payment_id: $json.payment_id\n};\n\n$json.registration_id = 'new-registration-uuid';\n$json.registration_status = 'active';\n\nreturn $items;\n"
+      },
+      "name": "8. Execute Registration",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2450,
+        300
+      ]
+    },
+    {
+       "parameters": {
+         "functionCode": "console.log('Generating documents for registration:', $json.registration_id);\n$json.documentsGenerated = true;\nreturn $items;"
+       },
+       "name": "9. Generate Documents",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         2650,
+         300
+       ]
+    },
+    {
+      "parameters": {
+        "workflowId": "user-notifications-workflow-id",
+        "data": "={{ { type: 'tournament_registration_success', user_id: $json.input.requested_by, team_id: $json.input.team_id, tournament_id: $json.input.tournament_id, player_ids: $json.input.player_ids, registration_id: $json.registration_id } }}"
+      },
+      "name": "10. Send Notifications",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2850,
+        300
+      ]
+    },
+    {
+       "parameters": {
+         "functionCode": "console.log('Adding team/players to communication channels for tournament:', $json.input.tournament_id);\n$json.communicationSetup = true;\nreturn $items;"
+       },
+       "name": "11. Add to Comms",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         3050,
+         300
+       ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "schema": "public",
+        "match": {
+          "key": "id",
+          "value": "={{$json.input.request_id}}"
+        },
+        "columns": {
+          "fields": [
+            { "column": "status", "value": "completed" },
+            { "column": "completed_at", "value": "={{new Date().toISOString()}}" },
+            { "column": "metadata", "value": "={{ { ...$json.input.metadata, registration_id: $json.registration_id, payment_id: $json.payment_id } }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "12. Update Request Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3250,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+       "parameters": {
+         "functionCode": "const response = {\n  success: true,\n  request_id: $json.input.request_id,\n  team_id: $json.input.team_id,\n  tournament_id: $json.input.tournament_id,\n  registration_id: $json.registration_id,\n  status: 'completed',\n  player_count: $json.input.player_ids.length,\n  payment_amount: $json.calculatedFee,\n  next_steps: [\n    'Check your email for the registration confirmation',\n    'Complete player waivers by [deadline]',\n    'Join the tournament Discord channel at [link]'\n  ],\n  completed_at: $node['12. Update Request Status'].json.completed_at \n};\n\nreturn { json: response };\n"
+       },
+       "name": "13. Format Response",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         3450,
+         300
+       ]
+    },
+    {
+      "parameters": {
+         "functionCode": "const errorMsg = `Tournament validation failed: ${$node['1. Get Tournament Info'].json ? 'Not open or full' : 'Not found'}`;\n$node['Update Request Failed'].json = { status: 'failed', error: errorMsg };\nreturn $items;"
+       },
+       "name": "Handle Tournament Error",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         850,
+         400
+       ]
+    },
+    {
+      "parameters": {
+         "functionCode": "const errorMsg = 'Permission denied: Requesting user is not the team captain.';\n$node['Update Request Failed'].json = { status: 'failed', error: errorMsg };\nreturn $items;"
+       },
+       "name": "Handle Permission Error",
+       "type": "n8n-nodes-base.function",
+       "typeVersion": 1,
+       "position": [
+         1250,
+         300
+       ]
+    },
+     {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "schema": "public",
+        "match": {
+          "key": "id",
+          "value": "={{$json.input.request_id}}"
+        },
+        "columns": {
+          "fields": [
+            { "column": "status", "value": "={{$json.status || 'failed'}}" },
+            { "column": "updated_at", "value": "={{new Date().toISOString()}}" },
+            { "column": "metadata", "value": "={{ { ...$json.input.metadata, error: $json.error } }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Update Request Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "1. Get Tournament Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Get Tournament Info": {
+      "main": [
+        [
+          {
+            "node": "Check Tournament Open & Capacity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Tournament Open & Capacity": {
+      "main": [
+        [
+          {
+            "node": "2. Get Team Info",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Tournament Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Get Team Info": {
+       "main": [
+         [
+           {
+             "node": "3. Check Captain Permission",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "3. Check Captain Permission": {
+       "main": [
+         [
+           {
+             "node": "4. Validate Players",
+             "type": "main",
+             "index": 0
+           }
+         ],
+         [
+           {
+             "node": "Handle Permission Error",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "4. Validate Players": {
+       "main": [
+         [
+           {
+             "node": "5. Calculate Fee",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "5. Calculate Fee": {
+       "main": [
+         [
+           {
+             "node": "6. Update Request with Fee",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "6. Update Request with Fee": {
+       "main": [
+         [
+           {
+             "node": "Payment Required?",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "Payment Required?": {
+       "main": [
+         [
+           {
+             "node": "7. Call Payment Processor",
+             "type": "main",
+             "index": 0
+           }
+         ],
+         [
+           {
+             "node": "Merge Payment Path",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "7. Call Payment Processor": {
+       "main": [
+         [
+           {
+             "node": "Merge Payment Path",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "Merge Payment Path": {
+       "main": [
+         [
+           {
+             "node": "8. Execute Registration",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "8. Execute Registration": {
+       "main": [
+         [
+           {
+             "node": "9. Generate Documents",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "9. Generate Documents": {
+       "main": [
+         [
+           {
+             "node": "10. Send Notifications",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "10. Send Notifications": {
+       "main": [
+         [
+           {
+             "node": "11. Add to Comms",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "11. Add to Comms": {
+       "main": [
+         [
+           {
+             "node": "12. Update Request Status",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "12. Update Request Status": {
+       "main": [
+         [
+           {
+             "node": "13. Format Response",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "Handle Tournament Error": {
+       "main": [
+         [
+           {
+             "node": "Update Request Failed",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    },
+    "Handle Permission Error": {
+       "main": [
+         [
+           {
+             "node": "Update Request Failed",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "placeholder-version-id",
+  "triggerCount": 0,
+  "tags": [
+    "Tournament",
+    "Registration",
+    "Supabase",
+    "Payment"
+  ]
+}

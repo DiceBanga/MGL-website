@@ -1,0 +1,277 @@
+{
+  "name": "Request Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "none",
+        "httpMethod": "POST",
+        "path": "api/requests",
+        "options": {
+          "rawBodyListing": true
+        },
+        "responseMode": "lastNode",
+        "responseHeaders": {
+          "entries": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "a639e404-da10-4024-8a24-d1c5dffadea1",
+      "name": "HTTP Request Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate incoming request data\nconst requiredFields = ['request_type'];\nconst requestData = $input.all()[0].json.body || $input.all()[0].json;\n\n// Check for required fields\nconst missingFields = [];\nfor (const field of requiredFields) {\n  if (!requestData[field]) {\n    missingFields.push(field);\n  }\n}\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      success: false,\n      error: `Missing required fields: ${missingFields.join(', ')}`\n    }\n  };\n}\n\n// Generate a unique request ID if not provided\nif (!requestData.request_id) {\n  requestData.request_id = $uuid();\n}\n\n// Add timestamp\nrequestData.created_at = new Date().toISOString();\nrequestData.status = 'pending';\n\nreturn {\n  json: {\n    ...requestData\n  }\n};"
+      },
+      "id": "d9a892a4-d0a9-4f74-9f11-ad4b2c629d98",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "team_change_requests",
+        "data": "={{ $json }}",
+        "additionalFields": {}
+      },
+      "id": "4bde61b3-5e5e-4f06-9a3d-55a7e3b9d6ad",
+      "name": "Create Request Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.request_type }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "team_transfer",
+              "type": "string",
+              "output": 0
+            },
+            {
+              "value2": "tournament_registration",
+              "type": "string",
+              "output": 1
+            },
+            {
+              "value2": "team_creation",
+              "type": "string",
+              "output": 2
+            }
+          ]
+        }
+      },
+      "id": "a1a9cc0f-53bd-48cb-8b23-4567c28965b0",
+      "name": "Route Request",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "team-transfer"
+      },
+      "id": "90cd0b1c-4458-4bba-8099-44b9b5287ca8",
+      "name": "Execute Team Transfer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "tournament-registration"
+      },
+      "id": "57f5d4e8-1af7-4eee-9a0a-99b5ca47e5eb",
+      "name": "Execute Tournament Registration",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "team-creation"
+      },
+      "id": "c61a3d36-ab08-4173-b9e5-6c3edc06cab1",
+      "name": "Execute Team Creation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "={{ $json.success || true }}"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.status || 'processing' }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message || 'Request is being processed' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "02b86fa5-d5e5-4ee9-b304-7cb8936d7452",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "HTTP Request Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Create Request Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Request Record": {
+      "main": [
+        [
+          {
+            "node": "Route Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Request": {
+      "main": [
+        [
+          {
+            "node": "Execute Team Transfer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Tournament Registration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Team Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Team Transfer": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Tournament Registration": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Team Creation": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "staticData": null,
+  "tags": ["API", "Core"],
+  "triggerCount": 1,
+  "versionId": "0e09efe8-5c1e-4684-aa24-1810bc5fd7b8"
+} 

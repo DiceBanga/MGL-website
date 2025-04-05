@@ -22,6 +22,8 @@ export interface PaymentMetadata {
   playersIds?: string[]; // Required to ensure proper data handling
   playerId?: string;     // Used for team transfers and online ID changes
   request_id?: string;   // Used for change requests
+  item_id?: string;      // Item ID for the payment
+  captainId?: string;    // Captain ID for team-related payments
   squarePaymentId?: string;
   receiptUrl?: string;
   error?: string;

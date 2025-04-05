@@ -24,32 +24,49 @@ class RequestService:
             request_id = request_data.get("request_id", str(uuid.uuid4()))
             request_data["request_id"] = request_id
             
+            self.logger.info(f"Processing {request_data['request_type']} request with ID: {request_id}")
+            
             # Validate request data
             self._validate_request_data(request_data)
             
             # Create initial request record with pending status
+            self.logger.info(f"Creating request record for {request_data['request_type']}")
             await self._create_request_record(request_data)
             
             # Process payment if needed
             payment_result = None
             if request_data.get("requires_payment", False):
-                payment_result = await self._process_payment(request_data)
-                
-            # Execute the requested action based on request type
-            action_result = await self._execute_action(request_data, payment_result)
-            
-            # Update request record with completed status
-            await self._update_request_status(request_id, "completed", action_result)
-            
+                self.logger.info(f"Request requires payment, processing payment for request {request_id}")
+                try:
+                    payment_result = await self._process_payment(request_data)
+                    self.logger.info(f"Payment successful for request {request_id}, setting status to payment_complete.")
+                    # Update status to indicate payment is done, ready for async execution
+                    # Pass payment_result as part of the metadata update
+                    await self._update_request_status(request_id, "payment_complete", {"payment_details": payment_result})
+                    final_status = "payment_complete"
+                except Exception as e:
+                    self.logger.error(f"Payment processing error for request {request_id}: {str(e)}", exc_info=True)
+                    # Ensure status is updated to payment_failed before raising
+                    await self._update_request_status(request_id, "payment_failed", {"error": str(e)})
+                    raise Exception(f"Payment failed: {str(e)}")
+            else:
+                # No payment required, set status to ready for execution
+                self.logger.info(f"No payment required for request {request_id}, setting status to ready_for_execution.")
+                await self._update_request_status(request_id, "ready_for_execution")
+                final_status = "ready_for_execution"
+
+            # Action execution is now handled asynchronously by the DB trigger/Edge Function
+            # Return success indicating the request was accepted and is being processed
             return {
                 "success": True,
                 "request_id": request_id,
-                "payment_result": payment_result,
-                "action_result": action_result
+                "status": final_status # Indicate the status reached in this synchronous part
+                # Optionally include payment_result if needed by frontend immediately
+                # "payment_result": payment_result
             }
             
         except Exception as e:
-            self.logger.error(f"Request processing error: {str(e)}")
+            self.logger.error(f"Request processing error: {str(e)}", exc_info=True)
             
             # Update request record with failed status
             if "request_id" in request_data:
@@ -109,7 +126,7 @@ class RequestService:
         
         # Include all request-specific fields in metadata for easier retrieval later
         for key, value in request_data.items():
-            if key not in ["request_id", "team_id", "request_type", "requested_by", "status", "created_at", "metadata"]:
+            if key not in ["request_id", "team_id", "request_type", "requested_by", "status", "created_at", "metadata", "item_id"]:
                 metadata[key] = value
         
         request_record = {
@@ -121,6 +138,13 @@ class RequestService:
             "created_at": datetime.now().isoformat(),
             "metadata": metadata
         }
+        
+        # Add item_id if provided
+        if "item_id" in request_data:
+            self.logger.info(f"Request includes item_id: {request_data['item_id']}")
+            request_record["item_id"] = request_data["item_id"]
+        else:
+            self.logger.warning(f"Request missing item_id, which may be required: {request_data['request_id']}")
         
         # Add type-specific fields
         if request_data["request_type"] == "team_rebrand":
@@ -154,16 +178,22 @@ class RequestService:
         # Insert into team_change_requests table
         try:
             self.logger.info(f"Inserting request record: {request_record}")
-            result = await self.supabase.table("team_change_requests").insert(request_record).execute()
             
-            if hasattr(result, 'error') and result.error is not None:
-                self.logger.error(f"Failed to create request record: {result.error}")
-                raise Exception(f"Failed to create request record: {result.error}")
+            # Create the query but don't await it
+            insert_query = self.supabase.table("team_change_requests").insert(request_record)
+            
+            # Execute the query without awaiting it
+            response = insert_query.execute()
+            
+            # Check for errors in the response
+            if hasattr(response, 'error') and response.error is not None:
+                self.logger.error(f"Failed to create request record: {response.error}")
+                raise Exception(f"Failed to create request record: {response.error}")
             
             self.logger.info(f"Successfully created request record with ID: {request_data['request_id']}")
-            return result
+            return response
         except Exception as e:
-            self.logger.error(f"Error creating request record: {str(e)}")
+            self.logger.error(f"Error creating request record: {str(e)}", exc_info=True)
             raise
     
     async def _process_payment(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -200,6 +230,43 @@ class RequestService:
         # Log payment data for debugging
         self.logger.info(f"Processing payment for request {request_data['request_id']} with reference_id: {payment_data['reference_id']}")
         
+        # If we don't have a source_id, create a pending payment record 
+        # and return a payment URL for the frontend to use
+        if not payment_data.get("source_id"):
+            self.logger.info("No source_id provided, creating pending payment record only")
+            
+            pending_result = {
+                "success": True,
+                "status": "pending",
+                "request_id": request_data["request_id"],
+                "payment_url": f"/payment/{request_data['request_id']}?type={request_data['request_type']}&amount={payment_data.get('amount', 0)}"
+            }
+            
+            # Still create a payment record in the database
+            try:
+                payment_record = {
+                    "id": str(uuid.uuid4()),
+                    "reference_id": request_data["request_id"],
+                    "user_id": request_data["requested_by"],
+                    "amount": payment_data.get("amount", 0),
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                    "metadata": payment_data.get("metadata", {})
+                }
+                
+                result = self.supabase.table("payments").insert(payment_record).execute()
+                
+                if hasattr(result, 'error') and result.error is not None:
+                    self.logger.error(f"Failed to create payment record: {result.error}")
+                else:
+                    self.logger.info(f"Created pending payment record for request {request_data['request_id']}")
+                    pending_result["payment_id"] = payment_record["id"]
+            except Exception as e:
+                self.logger.error(f"Error creating payment record: {str(e)}", exc_info=True)
+            
+            return pending_result
+            
         # Process payment using payment service
         return await self.payment_service.process_payment(payment_data)
     
@@ -369,20 +436,58 @@ class RequestService:
         team_id = request_data["team_id"]
         new_name = request_data["new_name"]
         
-        # Update team name
-        result = await self.supabase.table("teams").update({
-            "name": new_name
-        }).eq("id", team_id).execute()
+        self.logger.info(f"Rebranding team {team_id} to '{new_name}'")
         
-        if hasattr(result, 'error') and result.error is not None:
-            raise Exception(f"Failed to rebrand team: {result.error}")
+        try:
+            # Get current team info for verification
+            team_query = self.supabase.table("teams").select("name").eq("id", team_id)
+            team_response = team_query.execute()
             
-        return {
-            "success": True, 
-            "team_id": team_id, 
-            "old_name": request_data.get("old_name"), 
-            "new_name": new_name
-        }
+            if not team_response.data:
+                raise Exception(f"Team with ID {team_id} not found")
+            
+            old_name = team_response.data[0]["name"]
+            self.logger.info(f"Current team name: '{old_name}'")
+            
+            # Update team name
+            update_query = self.supabase.table("teams").update({
+                "name": new_name,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", team_id)
+            
+            update_response = update_query.execute()
+            
+            if hasattr(update_response, 'error') and update_response.error is not None:
+                raise Exception(f"Failed to rebrand team: {update_response.error}")
+            
+            # Check if logo URL is in metadata and update if present
+            logo_url = None
+            if "metadata" in request_data and request_data["metadata"] and "logo_url" in request_data["metadata"]:
+                logo_url = request_data["metadata"]["logo_url"]
+                self.logger.info(f"Updating team logo to: {logo_url}")
+                
+                # Update team logo in a separate query
+                logo_update_query = self.supabase.table("teams").update({
+                    "logo_url": logo_url
+                }).eq("id", team_id)
+                
+                logo_update_response = logo_update_query.execute()
+                
+                if hasattr(logo_update_response, 'error') and logo_update_response.error is not None:
+                    self.logger.warning(f"Failed to update team logo: {logo_update_response.error}")
+            
+            self.logger.info(f"Successfully rebranded team {team_id} from '{old_name}' to '{new_name}'")
+            
+            return {
+                "success": True, 
+                "team_id": team_id, 
+                "old_name": old_name, 
+                "new_name": new_name,
+                "logo_url": logo_url
+            }
+        except Exception as e:
+            self.logger.error(f"Error in _rebrand_team: {str(e)}", exc_info=True)
+            raise Exception(f"Failed to rebrand team: {str(e)}")
 
     async def _update_online_id(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -486,46 +591,68 @@ class RequestService:
         """
         Update request status in the database
         """
-        update_data = {
-            "status": status,
-            "updated_at": datetime.now().isoformat()
-        }
+        self.logger.info(f"Updating request {request_id} status to '{status}'")
         
-        if result:
-            # Use existing metadata and add result to it
-            # Get the current metadata
-            current_data = await self.supabase.table("team_change_requests").select("metadata").eq("id", request_id).execute()
+        try:
+            update_data = {
+                "status": status,
+                "updated_at": datetime.now().isoformat()
+            }
             
-            if hasattr(current_data, 'error') and current_data.error is not None:
-                self.logger.error(f"Failed to get current metadata: {current_data.error}")
-                # Continue with just the result
-                update_data["metadata"] = {"result": result}
-            else:
+            if status in ["completed", "processing"]:
+                update_data["processed_at"] = datetime.now().isoformat()
+            
+            if result:
+                self.logger.debug(f"Adding result data to request {request_id}")
+                
+                # Use existing metadata and add result to it
+                # Get the current metadata
+                select_query = self.supabase.table("team_change_requests").select("metadata").eq("id", request_id)
+                current_data = select_query.execute()
+                
+                current_metadata = {}
+                if current_data.data and len(current_data.data) > 0:
+                    current_metadata = current_data.data[0].get("metadata", {}) or {}
+                
                 # Combine existing metadata with result
-                current_metadata = current_data.data[0]["metadata"] if current_data.data else {}
                 update_data["metadata"] = {
                     **(current_metadata or {}),
                     "result": result
                 }
             
-        # Update team_change_requests table
-        result = await self.supabase.table("team_change_requests").update(update_data).eq("id", request_id).execute()
-        
-        if hasattr(result, 'error') and result.error is not None:
-            self.logger.error(f"Failed to update request status: {result.error}")
+            # Update team_change_requests table
+            update_query = self.supabase.table("team_change_requests").update(update_data).eq("id", request_id)
+            response = update_query.execute()
+            
+            if hasattr(response, 'error') and response.error is not None:
+                self.logger.error(f"Failed to update request status: {response.error}")
+                # Don't raise exception here as this is usually called from catch blocks
+            else:
+                self.logger.info(f"Successfully updated request {request_id} status to '{status}'")
+        except Exception as e:
+            self.logger.error(f"Error updating request status: {str(e)}", exc_info=True)
             # Don't raise exception here as this is usually called from catch blocks
     
     async def get_request(self, request_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a request by ID
         """
-        result = await self.supabase.table("team_change_requests").select("*").eq("id", request_id).execute()
+        self.logger.info(f"Getting request with ID: {request_id}")
         
-        if hasattr(result, 'error') and result.error is not None:
-            self.logger.error(f"Failed to get request: {result.error}")
-            return None
+        try:
+            query = self.supabase.table("team_change_requests").select("*").eq("id", request_id)
+            result = query.execute()
             
-        if not result.data:
-            return None
+            if hasattr(result, 'error') and result.error is not None:
+                self.logger.error(f"Failed to get request: {result.error}")
+                return None
             
-        return result.data[0] 
+            if not result.data or len(result.data) == 0:
+                self.logger.warning(f"No request found with ID: {request_id}")
+                return None
+            
+            self.logger.info(f"Successfully retrieved request with ID: {request_id}")
+            return result.data[0]
+        except Exception as e:
+            self.logger.error(f"Error retrieving request: {str(e)}", exc_info=True)
+            return None 

@@ -26,7 +26,8 @@ export interface TeamTransferRequest extends RequestBase {
   request_type: 'team_transfer';
   new_captain_id: string;
   old_captain_id: string;
-  payment_data?: any;
+  item_id: string;
+  payment_data?: PaymentDetails;
 }
 
 export interface RosterChangeRequest extends RequestBase {
@@ -56,7 +57,17 @@ export interface TeamRebrandRequest extends RequestBase {
   request_type: 'team_rebrand';
   old_name: string;
   new_name: string;
-  payment_data?: any;
+  payment_data?: {
+    amount: number;
+    metadata: {
+      request_id: string;
+      request_type: string;
+      team_id: string;
+      old_name: string;
+      new_name: string;
+      logo_url?: string;
+    }
+  };
 }
 
 export interface OnlineIdChangeRequest extends RequestBase {
@@ -87,15 +98,110 @@ export type RequestData =
 
 export class RequestService {
   private apiUrl = '/api';
-  
+  private defaultItemIds = {
+    team_transfer: '1002',
+    team_rebrand: '1003',
+    // Add other default item IDs here
+  };
+
+  // Request builders
+  public createTeamTransferRequest(params: {
+    teamId: string;
+    userId: string;
+    newCaptainId: string;
+    teamName: string;
+    newCaptainName: string;
+    amount: number;
+  }): TeamTransferRequest {
+    const requestId = uuidv4();
+    const itemId = this.defaultItemIds.team_transfer;
+
+    const paymentDetails: PaymentDetails = {
+      id: uuidv4(),
+      type: 'team_transfer',
+      name: 'Team Ownership Transfer',
+      amount: params.amount,
+      description: `Transfer ownership of ${params.teamName} to ${params.newCaptainName}`,
+      teamId: params.teamId,
+      captainId: params.userId,
+      playersIds: [],
+      playerId: params.newCaptainId,
+      request_id: requestId,
+      referenceId: `${itemId}-${requestId.replace(/-/g, '')}`,
+      item_id: itemId,
+      metadata: {
+        requestType: 'team_transfer',
+        oldCaptainId: params.userId,
+        oldCaptainName: params.userId,
+        newCaptainId: params.newCaptainId,
+        newCaptainName: params.newCaptainName,
+        teamName: params.teamName,
+        requestId: requestId,
+        changeRequestData: {
+          teamId: params.teamId,
+          requestedBy: params.userId,
+          itemId: itemId,
+          playerId: params.newCaptainId,
+          oldValue: params.userId,
+          newValue: params.newCaptainId,
+          requestId: requestId,
+          metadata: {
+            oldCaptainName: params.userId,
+            newCaptainName: params.newCaptainName,
+            teamName: params.teamName,
+            requestId: requestId
+          }
+        }
+      }
+    };
+
+    return {
+      request_id: requestId,
+      request_type: 'team_transfer',
+      team_id: params.teamId,
+      requested_by: params.userId,
+      requires_payment: true,
+      new_captain_id: params.newCaptainId,
+      old_captain_id: params.userId,
+      item_id: itemId,
+      payment_data: paymentDetails
+    };
+  }
+
+  // Validation methods
+  private validateTeamTransferRequest(request: TeamTransferRequest): void {
+    if (!request.team_id) throw new Error('Missing required field: team_id');
+    if (!request.requested_by) throw new Error('Missing required field: requested_by');
+    if (!request.new_captain_id) throw new Error('Missing required field: new_captain_id');
+    if (!request.old_captain_id) throw new Error('Missing required field: old_captain_id');
+    if (!request.item_id) throw new Error('Missing required field: item_id');
+
+    if (request.requires_payment && !request.payment_data) {
+      throw new Error('Payment data required for paid requests');
+    }
+  }
+
+  private validateRequest(request: RequestData): void {
+    switch (request.request_type) {
+      case 'team_transfer':
+        this.validateTeamTransferRequest(request);
+        break;
+      // Add other request type validations here
+    }
+  }
+
+  // Process request with error handling and status tracking
   async processRequest(requestData: RequestData): Promise<any> {
     try {
-      // Generate request ID if not provided
+      // Ensure request has an ID
       if (!requestData.request_id) {
         requestData.request_id = uuidv4();
       }
       
       console.log(`Processing ${requestData.request_type} request with ID: ${requestData.request_id}`);
+      
+      // Validate request data
+      this.validateRequest(requestData);
       
       // Map request type to endpoint
       const endpoints = {
@@ -114,6 +220,9 @@ export class RequestService {
         throw new Error(`Unknown request type: ${requestData.request_type}`);
       }
       
+      // Track request status
+      await this.updateRequestStatus(requestData.request_id, 'processing');
+      
       // Call the API endpoint
       const response = await fetch(`${this.apiUrl}${endpoint}`, {
         method: 'POST',
@@ -125,16 +234,41 @@ export class RequestService {
       
       if (!response.ok) {
         const errorData = await response.json();
+        await this.updateRequestStatus(requestData.request_id, 'failed', errorData);
         throw new Error(errorData.detail || 'Failed to process request');
       }
       
-      return await response.json();
+      const result = await response.json();
+      await this.updateRequestStatus(requestData.request_id, 'pending');
+      
+      return result;
     } catch (error) {
       console.error('Request processing error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to process request'
-      };
+      if (requestData.request_id) {
+        await this.updateRequestStatus(requestData.request_id, 'failed', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+      throw error;
+    }
+  }
+
+  // Status tracking
+  private async updateRequestStatus(requestId: string, status: string, metadata?: any): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('team_change_requests')
+        .update({
+          status,
+          metadata: metadata ? { ...metadata, updated_at: new Date().toISOString() } : undefined
+        })
+        .eq('id', requestId);
+
+      if (error) {
+        console.error('Error updating request status:', error);
+      }
+    } catch (error) {
+      console.error('Error updating request status:', error);
     }
   }
   

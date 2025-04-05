@@ -2,12 +2,8 @@ import { Router } from 'express';
 import { Client, Environment } from 'square';
 import { v4 as uuidv4 } from 'uuid';
 import { paymentMetadataMiddleware } from '../middleware/paymentMetadata';
-import { paymentMetadataMiddleware } from '../middleware/paymentMetadata';
 
 const router = Router();
-
-// Apply payment metadata middleware
-router.use(paymentMetadataMiddleware);
 
 // Apply payment metadata middleware
 router.use(paymentMetadataMiddleware);

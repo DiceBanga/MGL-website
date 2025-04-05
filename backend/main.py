@@ -4,6 +4,7 @@ from square.client import Client
 from pydantic import BaseModel
 import os
 import logging
+import logging.config
 import uuid
 import json
 from dotenv import load_dotenv
@@ -20,11 +21,89 @@ from routes.webhooks import router as webhooks_router
 from services.payment_service import PaymentService
 
 # Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+def setup_logging():
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    log_date_format = "%Y-%m-%d %H:%M:%S"
+    
+    # Ensure logs directory exists
+    logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+    
+    # Log file paths
+    log_file = os.path.join(logs_dir, f"app_{datetime.now().strftime('%Y%m%d')}.log")
+    error_log_file = os.path.join(logs_dir, f"error_{datetime.now().strftime('%Y%m%d')}.log")
+    
+    # Logging configuration
+    logging_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "standard": {
+                "format": log_format,
+                "datefmt": log_date_format
+            },
+            "json": {
+                "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+                "format": "%(asctime)s %(name)s %(levelname)s %(message)s",
+                "datefmt": log_date_format
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "level": log_level,
+                "formatter": "standard",
+                "stream": "ext://sys.stdout"
+            },
+            "file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": log_level,
+                "formatter": "standard",
+                "filename": log_file,
+                "maxBytes": 10485760,  # 10MB
+                "backupCount": 10
+            },
+            "error_file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": "ERROR",
+                "formatter": "standard",
+                "filename": error_log_file,
+                "maxBytes": 10485760,  # 10MB
+                "backupCount": 10
+            },
+        },
+        "loggers": {
+            "": {
+                "handlers": ["console", "file", "error_file"],
+                "level": log_level,
+                "propagate": True
+            },
+            "uvicorn": {
+                "handlers": ["console", "file", "error_file"],
+                "level": log_level,
+                "propagate": False
+            },
+            "supabase": {
+                "handlers": ["console", "file", "error_file"],
+                "level": log_level,
+                "propagate": False
+            }
+        }
+    }
+    
+    # Apply configuration
+    logging.config.dictConfig(logging_config)
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging configured with level: {log_level}")
+
+# Initialize logging
+setup_logging()
+
 logger = logging.getLogger(__name__)
+logger.info("Starting application...")
 
 # Load environment variables from the correct location
 current_file = pathlib.Path(__file__).resolve()

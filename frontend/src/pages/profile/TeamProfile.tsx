@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Users, Trophy, Calendar, BarChart2, User2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DbTeam, DbTeamMember } from '../../types/database';
+import CaptainRequestTiles from '../../components/CaptainRequestTiles';
+import TeamActionProcessor from '../../components/TeamActionProcessor';
+import type { RequestType } from '../../services/RequestService';
 
 interface TeamMemberUI {
   id: string;
@@ -21,13 +24,28 @@ interface TeamWithStandings extends DbTeam {
 
 const TeamProfile = () => {
   const { teamId } = useParams();
+  const navigate = useNavigate();
   const [team, setTeam] = useState<DbTeam & { wins: number; losses: number; tournaments_played: number } | null>(null);
   const [members, setMembers] = useState<TeamMemberUI[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [isCaptain, setIsCaptain] = useState(false);
+  const [selectedRequestType, setSelectedRequestType] = useState<RequestType | null>(null);
 
   useEffect(() => {
     fetchTeamData();
+    fetchCurrentUser();
   }, [teamId]);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      setCurrentUser(userId || null);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+    }
+  };
 
   const fetchTeamData = async () => {
     if (!teamId) return;
@@ -80,19 +98,41 @@ const TeamProfile = () => {
       }
 
       // Transform the raw data into our UI format
-      setMembers(((membersData || []) as unknown as DbTeamMember[]).map(member => ({
+      const transformedMembers = ((membersData || []) as unknown as DbTeamMember[]).map(member => ({
         id: member.user_id,
         display_name: member.players.display_name,
         role: member.role,
         jersey_number: member.jersey_number,
         avatar_url: member.players.avatar_url
-      })));
+      }));
+      
+      setMembers(transformedMembers);
+      
+      // Check if current user is the captain
+      if (currentUser) {
+        const captainMember = transformedMembers.find(m => m.id === currentUser && m.role === 'captain');
+        setIsCaptain(!!captainMember);
+      }
 
       setLoading(false);
     } catch (error) {
       console.error('Error:', error);
       setLoading(false);
     }
+  };
+
+  const handleRequestSelection = (requestType: RequestType) => {
+    setSelectedRequestType(requestType);
+  };
+
+  const handleRequestSuccess = () => {
+    setSelectedRequestType(null);
+    // Refresh team data after request
+    fetchTeamData();
+  };
+
+  const handleRequestCancel = () => {
+    setSelectedRequestType(null);
   };
 
   if (loading) {
@@ -113,6 +153,30 @@ const TeamProfile = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-2xl font-bold text-white">Team Not Found</h2>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If a request type is selected, show the action processor
+  if (selectedRequestType && currentUser) {
+    return (
+      <div className="bg-gray-900/50 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+            <TeamActionProcessor
+              actionType={selectedRequestType}
+              teamId={teamId}
+              userId={currentUser}
+              initialValue={selectedRequestType === 'team_rebrand' ? team.name : undefined}
+              onSuccess={handleRequestSuccess}
+              onCancel={handleRequestCancel}
+              onError={(error) => console.error(error)}
+              requiresPayment={selectedRequestType === 'team_transfer'}
+              paymentAmount={selectedRequestType === 'team_transfer' ? 10 : 5}
+              members={members}
+            />
           </div>
         </div>
       </div>
@@ -178,7 +242,7 @@ const TeamProfile = () => {
                     <span className="text-gray-300">Win Rate</span>
                   </div>
                   <p className="text-2xl font-bold text-white">
-                    {((team.wins / (team.wins + team.losses)) * 100).toFixed(1)}%
+                    {((team.wins / (team.wins + team.losses || 1)) * 100).toFixed(1)}%
                   </p>
                 </div>
               </div>
@@ -237,6 +301,17 @@ const TeamProfile = () => {
                 ))}
               </div>
             </div>
+            
+            {/* Captain Request Tiles - Only visible to team captain */}
+            {isCaptain && currentUser && (
+              <div className="mt-8 bg-gray-800/50 backdrop-blur-sm rounded-lg p-6">
+                <CaptainRequestTiles 
+                  userId={currentUser}
+                  teamId={teamId}
+                  onRequestSelected={handleRequestSelection}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

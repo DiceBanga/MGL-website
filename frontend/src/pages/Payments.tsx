@@ -296,7 +296,7 @@ const Payments = () => {
           player_id: playerId,
           old_value: oldValue,
           new_value: newValue,
-          status: 'pending',
+          status: 'processing',
           payment_reference: paymentId, // Use a different field name to avoid UUID validation
           item_id: formattedItemId, // Use the formatted item ID
           metadata: cleanMetadata

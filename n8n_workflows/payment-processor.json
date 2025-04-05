@@ -1,0 +1,560 @@
+{
+  "name": "Payment Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e8d0c9a2-3b7c-4f1c-8f2a-d5c9f8e5a7b6",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate payment request\nconst data = $input.all()[0].json;\n\n// Required fields for payment processing\nconst requiredFields = ['amount', 'currency', 'source_id', 'request_id'];\nconst missingFields = [];\n\nfor (const field of requiredFields) {\n  if (!data[field]) {\n    missingFields.push(field);\n  }\n}\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      success: false,\n      error: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'failed',\n      request_id: data.request_id || null\n    }\n  };\n}\n\n// Generate idempotency key if not provided\nif (!data.idempotency_key) {\n  data.idempotency_key = $uuid();\n}\n\n// Ensure amount is in cents for Square\nif (typeof data.amount === 'number' && data.amount < 100 && data.currency === 'USD') {\n  data.amount = Math.round(data.amount * 100);\n}\n\nreturn {\n  json: {\n    ...data,\n    status: 'processing'\n  }\n};"
+      },
+      "id": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+      "name": "Validate Payment Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "team_change_requests",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-b8c9-d0e1-f2a3b4c5d6e7",
+      "name": "Get Request Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data && $json.data.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-a7b8-c9d0-e1f2-a3b4c5d6e7f8",
+      "name": "Request Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "payment",
+        "amount": "={{ $json.amount }}",
+        "sourceid": "={{ $json.source_id }}",
+        "additionalFields": {
+          "idempotencyKey": "={{ $json.idempotency_key }}",
+          "note": "Payment for request {{ $json.request_id }}",
+          "referenceId": "={{ $json.request_id }}"
+        }
+      },
+      "id": "d4e5f6a7-b8c9-d0e1-f2a3-b4c5d6e7f8a9",
+      "name": "Process Square Payment",
+      "type": "n8n-nodes-base.square",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ],
+      "credentials": {
+        "squareApi": {
+          "id": "square-credentials",
+          "name": "Square account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.payment && $json.payment.id }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "e5f6a7b8-c9d0-e1f2-a3b4-c5d6-e7f8-a9b0",
+      "name": "Payment Successful?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "payments",
+        "columns": {
+          "column": [
+            {
+              "name": "payment_id",
+              "value": "={{ $json.payment.id }}"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.amount }}"
+            },
+            {
+              "name": "currency",
+              "value": "={{ $json.currency || 'USD' }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "provider",
+              "value": "square"
+            },
+            {
+              "name": "created_at",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify($json.payment) }}"
+            }
+          ]
+        }
+      },
+      "id": "f6a7b8c9-d0e1-f2a3-b4c5-d6e7-f8a9-b0c1",
+      "name": "Record Payment Success",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "payment_status",
+              "value": "paid"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "a7b8c9d0-e1f2-a3b4-c5d6-e7f8-a9b0-c1d2",
+      "name": "Update Request Payment Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=true"
+            },
+            {
+              "name": "message",
+              "value": "Payment processed successfully"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "payment_id",
+              "value": "={{ $json.payment.id }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b8c9d0e1-f2a3-b4c5-d6e7-f8a9-b0c1-d2e3",
+      "name": "Payment Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "payments",
+        "columns": {
+          "column": [
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.amount }}"
+            },
+            {
+              "name": "currency",
+              "value": "={{ $json.currency || 'USD' }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            },
+            {
+              "name": "provider",
+              "value": "square"
+            },
+            {
+              "name": "created_at",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify({error: $json.errors || 'Payment processing failed'}) }}"
+            }
+          ]
+        }
+      },
+      "id": "c9d0e1f2-a3b4-c5d6-e7f8-a9b0-c1d2-e3f4",
+      "name": "Record Payment Failure",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "team_change_requests",
+        "where": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}",
+              "condition": "equals"
+            }
+          ]
+        },
+        "data": {
+          "values": [
+            {
+              "column": "payment_status",
+              "value": "failed"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $now.toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "d0e1f2a3-b4c5-d6e7-f8a9-b0c1-d2e3-f4a5",
+      "name": "Update Request Payment Failure",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=false"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.errors ? JSON.stringify($json.errors) : 'Payment processing failed' }}"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e1f2a3b4-c5d6-e7f8-a9b0-c1d2-e3f4-a5b6",
+      "name": "Payment Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "=false"
+            },
+            {
+              "name": "error",
+              "value": "Request not found"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f2a3b4c5-d6e7-f8a9-b0c1-d2e3-f4a5-b6c7",
+      "name": "Request Not Found Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Validate Payment Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payment Request": {
+      "main": [
+        [
+          {
+            "node": "Get Request Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Request Details": {
+      "main": [
+        [
+          {
+            "node": "Request Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Exists?": {
+      "main": [
+        [
+          {
+            "node": "Process Square Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request Not Found Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Square Payment": {
+      "main": [
+        [
+          {
+            "node": "Payment Successful?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Successful?": {
+      "main": [
+        [
+          {
+            "node": "Record Payment Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Payment Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Payment Success": {
+      "main": [
+        [
+          {
+            "node": "Update Request Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Payment Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Payment Failure": {
+      "main": [
+        [
+          {
+            "node": "Update Request Payment Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Request Payment Failure": {
+      "main": [
+        [
+          {
+            "node": "Payment Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "staticData": null,
+  "tags": ["Payments"],
+  "triggerCount": 0,
+  "versionId": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890"
+} 

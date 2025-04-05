@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -14,6 +14,12 @@ import {
   TournamentRegistrationRequest,
   RequestData
 } from '../services/RequestService';
+import TeamRebrandForm from './TeamRebrandForm';
+import { toast } from 'react-hot-toast';
+import { Team } from '../types/team';
+import { User } from '../types/user';
+import { Player } from '../types/player';
+import { supabase } from '../lib/supabase';
 
 // Props type for the TeamActionProcessor component
 interface TeamActionProcessorProps {
@@ -27,6 +33,9 @@ interface TeamActionProcessorProps {
   requiresPayment?: boolean;
   paymentAmount?: number;
   members?: any[]; // Optional members array for roster-related operations
+  team?: Team;
+  user?: User;
+  onClose?: () => void;
 }
 
 // FormData interface to handle different action types
@@ -58,7 +67,10 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
   onError,
   requiresPayment = false,
   paymentAmount = 0,
-  members
+  members,
+  team,
+  user,
+  onClose = () => {}
 }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<FormData>({
@@ -81,7 +93,33 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
 
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [teamMembers, setTeamMembers] = useState<Player[]>([]);
   const requestService = new RequestService();
+
+  useEffect(() => {
+    if (actionType === 'team_transfer' && team?.id) {
+      fetchTeamMembers();
+    }
+  }, [actionType, team?.id]);
+
+  const fetchTeamMembers = async () => {
+    if (!team?.id || !user?.id) return;
+
+    try {
+      const { data: members, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('team_id', team.id)
+        .neq('id', user.id);
+
+      if (error) throw error;
+      setTeamMembers(members || []);
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+      toast.error('Failed to load team members');
+    }
+  };
 
   // Handle input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -94,11 +132,6 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
     e.preventDefault();
     
     // Different validations based on action type
-    if (actionType === 'team_rebrand' && !formData.team_name) {
-      onError?.('Team name is required');
-      return;
-    }
-    
     if (actionType === 'online_id_change' && !formData.online_id) {
       onError?.('New online ID is required');
       return;
@@ -117,33 +150,184 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
     }
   };
 
+  // Get action description for confirmation dialog
+  const getActionDescription = (): string => {
+    switch (actionType) {
+      case 'online_id_change':
+        return `Change online ID to "${formData.online_id}" (${formData.platform})`;
+      case 'team_creation':
+        return `Create new team "${formData.team_name}"`;
+      case 'team_transfer':
+        const newCaptainName = members?.find((m: any) => m.user_id === formData.new_captain_id)?.display_name || formData.new_captain_id;
+        return `Transfer team ownership to ${newCaptainName}`;
+      case 'roster_change':
+        const playerName = members?.find((m: any) => m.user_id === formData.player_id)?.display_name || formData.player_id;
+        return `${formData.operation === 'add' ? 'Add' : formData.operation === 'remove' ? 'Remove' : 'Update'} player ${playerName}`;
+      case 'league_registration':
+        return `Register team for league ${formData.league_id}`;
+      case 'tournament_registration':
+        return `Register team for tournament ${formData.tournament_id}`;
+      default:
+        return 'Process team action';
+    }
+  };
+
+  // Render form based on action type
+  const renderActionForm = () => {
+    switch (actionType) {
+      case 'online_id_change':
+        return (
+          <>
+            <div className="mb-4">
+              <label htmlFor="online_id" className="block text-sm font-medium text-gray-200 mb-1">
+                New Online ID
+              </label>
+              <input
+                type="text"
+                id="online_id"
+                name="online_id"
+                value={formData.online_id}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-blue-500/30 focus:border-blue-500 focus:ring focus:ring-blue-500/20 rounded-lg text-white"
+                required
+              />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="platform" className="block text-sm font-medium text-gray-200 mb-1">
+                Platform
+              </label>
+              <select
+                id="platform"
+                name="platform"
+                value={formData.platform}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-blue-500/30 focus:border-blue-500 focus:ring focus:ring-blue-500/20 rounded-lg text-white"
+              >
+                <option value="psn">PlayStation Network</option>
+                <option value="xbox">Xbox Live</option>
+                <option value="steam">Steam</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </>
+        );
+        
+      case 'team_creation':
+        return (
+          <div className="mb-4">
+            <label htmlFor="team_name" className="block text-sm font-medium text-gray-200 mb-1">
+              Team Name
+            </label>
+            <input
+              type="text"
+              id="team_name"
+              name="team_name"
+              value={formData.team_name}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 bg-gray-700/50 border border-emerald-500/30 focus:border-emerald-500 focus:ring focus:ring-emerald-500/20 rounded-lg text-white"
+              required
+            />
+          </div>
+        );
+        
+      case 'team_transfer':
+        return (
+          <div className="mb-4">
+            <label htmlFor="new_captain_id" className="block text-sm font-medium text-gray-200 mb-1">
+              Transfer Ownership To
+            </label>
+            <select
+              id="new_captain_id"
+              name="new_captain_id"
+              value={formData.new_captain_id}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 bg-gray-700/50 border border-blue-500/30 focus:border-blue-500 focus:ring focus:ring-blue-500/20 rounded-lg text-white"
+              required
+            >
+              <option value="">Select New Captain</option>
+              {members?.filter(member => member.user_id !== userId).map(member => (
+                <option key={member.user_id} value={member.user_id}>
+                  {member.display_name || member.username || member.user_id}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+        
+      case 'roster_change':
+        return (
+          <>
+            <div className="mb-4">
+              <label htmlFor="player_id" className="block text-sm font-medium text-gray-200 mb-1">
+                Player
+              </label>
+              <select
+                id="player_id"
+                name="player_id"
+                value={formData.player_id}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-purple-500/30 focus:border-purple-500 focus:ring focus:ring-purple-500/20 rounded-lg text-white"
+                required
+              >
+                <option value="">Select a Player</option>
+                {members?.map(member => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {member.display_name || `Player ${member.user_id.substring(0, 8)}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mb-4">
+              <label htmlFor="operation" className="block text-sm font-medium text-gray-200 mb-1">
+                Operation
+              </label>
+              <select
+                id="operation"
+                name="operation"
+                value={formData.operation}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-purple-500/30 focus:border-purple-500 focus:ring focus:ring-purple-500/20 rounded-lg text-white"
+                required
+              >
+                <option value="add">Add to Roster</option>
+                <option value="remove">Remove from Roster</option>
+                <option value="update">Update Role</option>
+              </select>
+            </div>
+            {formData.operation === 'update' && (
+              <div className="mb-4">
+                <label htmlFor="new_role" className="block text-sm font-medium text-gray-200 mb-1">
+                  New Role
+                </label>
+                <input
+                  type="text"
+                  id="new_role"
+                  name="new_role"
+                  value={formData.new_role}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-purple-500/30 focus:border-purple-500 focus:ring focus:ring-purple-500/20 rounded-lg text-white"
+                  required
+                />
+              </div>
+            )}
+          </>
+        );
+        
+      default:
+        return <p className="text-gray-300">Please select an action type</p>;
+    }
+  };
+
   // Process the request based on action type
   const handleSubmit = async () => {
     setIsLoading(true);
     
     try {
-      // Create the request data based on the action type
-      let requestData: RequestData;
       // Generate a consistent request ID for both the request and payment reference
       const requestId = uuidv4();
+      let requestData: RequestData | undefined;
       
       switch (actionType) {
-        case 'team_rebrand':
-          requestData = {
-            request_id: requestId,
-            request_type: 'team_rebrand',
-            team_id: teamId!,
-            requested_by: userId,
-            requires_payment: requiresPayment,
-            old_name: initialValue || '',
-            new_name: formData.team_name!,
-            payment_data: requiresPayment ? { 
-              amount: paymentAmount,
-              metadata: { request_id: requestId }
-            } : undefined
-          } as TeamRebrandRequest;
-          break;
-          
         case 'online_id_change':
           requestData = {
             request_id: requestId,
@@ -180,6 +364,51 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
           break;
           
         case 'team_transfer':
+          // Get team and player names for metadata
+          const newCaptain = members?.find(m => m.user_id === formData.new_captain_id);
+          const teamName = initialValue || 'Unknown Team';
+          const itemId = '1002'; // Default item ID for team transfers
+          
+          // Create payment details first
+          const paymentDetails = {
+            id: uuidv4(),
+            type: 'team_transfer',
+            name: 'Team Ownership Transfer',
+            amount: paymentAmount,
+            description: `Transfer ownership of ${teamName} to ${newCaptain?.display_name || 'new captain'}`,
+            teamId: teamId,
+            captainId: userId,
+            playersIds: [],
+            playerId: formData.new_captain_id!,
+            request_id: requestId,
+            referenceId: `${itemId}-${requestId.replace(/-/g, '')}`,
+            item_id: itemId,
+            metadata: {
+              requestType: 'team_transfer',
+              oldCaptainId: userId,
+              oldCaptainName: userId,
+              newCaptainId: formData.new_captain_id!,
+              newCaptainName: newCaptain?.display_name || 'new captain',
+              teamName: teamName,
+              requestId: requestId,
+              changeRequestData: {
+                teamId: teamId,
+                requestedBy: userId,
+                itemId: itemId,
+                playerId: formData.new_captain_id!,
+                oldValue: userId,
+                newValue: formData.new_captain_id!,
+                requestId: requestId,
+                metadata: {
+                  oldCaptainName: userId,
+                  newCaptainName: newCaptain?.display_name || 'new captain',
+                  teamName: teamName,
+                  requestId: requestId
+                }
+              }
+            }
+          };
+
           requestData = {
             request_id: requestId,
             request_type: 'team_transfer',
@@ -187,11 +416,9 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
             requested_by: userId,
             requires_payment: requiresPayment,
             new_captain_id: formData.new_captain_id!,
-            old_captain_id: formData.old_captain_id || userId,
-            payment_data: requiresPayment ? { 
-              amount: paymentAmount,
-              metadata: { request_id: requestId }
-            } : undefined
+            old_captain_id: userId,
+            item_id: itemId,
+            payment_data: requiresPayment ? paymentDetails : undefined
           } as TeamTransferRequest;
           break;
           
@@ -246,14 +473,17 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
           break;
       }
       
-      // Process the request
-      const service = new RequestService();
-      const response = await service.processRequest(requestData);
-      
-      if (response.success === false) {
-        onError?.(response.error || 'Failed to process request');
+      // If we have request data, process the request
+      if (requestData) {
+        const response = await requestService.processRequest(requestData);
+        
+        if (response.success === false) {
+          onError?.(response.error || 'Failed to process request');
+        } else {
+          onSuccess?.(response);
+        }
       } else {
-        onSuccess?.(response);
+        onError?.('Invalid action type');
       }
     } catch (error) {
       onError?.('An error occurred while processing the request');
@@ -264,382 +494,147 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
     }
   };
 
-  // Render form based on action type
-  const renderForm = () => {
-    switch (actionType) {
-      case 'team_rebrand':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Team Name</span>
-              </label>
-              <input
-                type="text"
-                name="team_name"
-                value={formData.team_name}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                required
-                title="Team Name"
-                aria-label="Team Name"
-              />
-            </div>
-          </div>
-        );
-        
-      case 'online_id_change':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Online ID</span>
-              </label>
-              <input
-                type="text"
-                name="online_id"
-                value={formData.online_id}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                required
-                title="Online ID"
-                aria-label="Online ID"
-              />
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Platform</span>
-              </label>
-              <select
-                name="platform"
-                value={formData.platform}
-                onChange={handleInputChange}
-                className="select select-bordered"
-                title="Gaming Platform"
-                aria-label="Gaming Platform"
-              >
-                <option value="psn">PlayStation Network</option>
-                <option value="xbox">Xbox Live</option>
-                <option value="steam">Steam</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-          </div>
-        );
+  const handleTransferConfirm = async () => {
+    if (!selectedPlayer || !team || !user) {
+      toast.error('Missing required data for transfer');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const requestService = new RequestService();
       
-      case 'team_creation':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Team Name</span>
-              </label>
-              <input
-                type="text"
-                name="team_name"
-                value={formData.team_name}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                required
-                title="Team Name"
-                aria-label="Team Name"
-              />
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">League (Optional)</span>
-              </label>
-              <input
-                type="text"
-                name="league_id"
-                value={formData.league_id}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                title="League ID"
-                aria-label="League ID"
-              />
-            </div>
-          </div>
-        );
-        
-      case 'team_transfer':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">New Captain</span>
-              </label>
-              <select
-                name="new_captain_id"
-                value={formData.new_captain_id}
-                onChange={handleInputChange}
-                className="select select-bordered"
-                required
-                title="New Captain"
-                aria-label="New Captain"
-              >
-                <option value="">Select a Team Member</option>
-                {members && members.map((member: any) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-        
-      case 'roster_change':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Player</span>
-              </label>
-              <select
-                name="player_id"
-                value={formData.player_id}
-                onChange={handleInputChange}
-                className="select select-bordered"
-                required
-                title="Player"
-                aria-label="Player"
-              >
-                <option value="">Select a Player</option>
-                {members && members.map((member: any) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Operation</span>
-              </label>
-              <select
-                name="operation"
-                value={formData.operation}
-                onChange={handleInputChange}
-                className="select select-bordered"
-                required
-                title="Operation"
-                aria-label="Operation"
-              >
-                <option value="add">Add to Roster</option>
-                <option value="remove">Remove from Roster</option>
-                <option value="update">Update Role</option>
-              </select>
-            </div>
-            {formData.operation === 'update' && (
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">New Role</span>
-                </label>
-                <input
-                  type="text"
-                  name="new_role"
-                  value={formData.new_role}
-                  onChange={handleInputChange}
-                  className="input input-bordered"
-                  required
-                  title="New Role"
-                  aria-label="New Role"
-                />
-              </div>
-            )}
-          </div>
-        );
-        
-      case 'league_registration':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">League ID</span>
-              </label>
-              <input
-                type="text"
-                name="league_id"
-                value={formData.league_id}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                required
-                title="League ID"
-                aria-label="League ID"
-              />
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Season</span>
-              </label>
-              <input
-                type="number"
-                name="season"
-                value={formData.season}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                title="Season"
-                aria-label="Season"
-              />
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Players</span>
-              </label>
-              <div className="flex flex-col gap-2 p-4 border rounded-lg">
-                {members ? members.map((member: any) => (
-                  <div key={member.user_id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.player_ids?.includes(member.user_id)}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setFormData(prev => ({
-                          ...prev,
-                          player_ids: checked 
-                            ? [...(prev.player_ids || []), member.user_id]
-                            : (prev.player_ids || []).filter(id => id !== member.user_id)
-                        }));
-                      }}
-                      className="checkbox"
-                      title={`Select ${member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}`}
-                      aria-label={`Select ${member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}`}
-                    />
-                    <span>{member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}</span>
-                  </div>
-                )) : <p>No team members found</p>}
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'tournament_registration':
-        return (
-          <div className="flex flex-col gap-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Tournament ID</span>
-              </label>
-              <input
-                type="text"
-                name="tournament_id"
-                value={formData.tournament_id}
-                onChange={handleInputChange}
-                className="input input-bordered"
-                required
-                title="Tournament ID"
-                aria-label="Tournament ID"
-              />
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Players</span>
-              </label>
-              <div className="flex flex-col gap-2 p-4 border rounded-lg">
-                {members ? members.map((member: any) => (
-                  <div key={member.user_id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.player_ids?.includes(member.user_id)}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setFormData(prev => ({
-                          ...prev,
-                          player_ids: checked 
-                            ? [...(prev.player_ids || []), member.user_id]
-                            : (prev.player_ids || []).filter(id => id !== member.user_id)
-                        }));
-                      }}
-                      className="checkbox"
-                      title={`Select ${member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}`}
-                      aria-label={`Select ${member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}`}
-                    />
-                    <span>{member.user?.user_name || `User ${member.user_id.substring(0, 8)}`}</span>
-                  </div>
-                )) : <p>No team members found</p>}
-              </div>
-            </div>
-          </div>
-        );
-        
-      default:
-        return <p>Unknown action type</p>;
-    }
-  };
+      const request = requestService.createTeamTransferRequest({
+        teamId: team.id,
+        userId: user.id,
+        newCaptainId: selectedPlayer.id,
+        teamName: team.name,
+        newCaptainName: selectedPlayer.name,
+        amount: 2000 // $20.00 in cents
+      });
 
-  // Get action title for displaying
-  const getActionTitle = () => {
-    switch (actionType) {
-      case 'team_rebrand':
-        return 'Change Team Name';
-      case 'online_id_change':
-        return 'Change Online ID';
-      case 'team_creation':
-        return 'Create New Team';
-      case 'team_transfer':
-        return 'Transfer Team Ownership';
-      case 'roster_change':
-        return 'Modify Team Roster';
-      case 'league_registration':
-        return 'Register for League';
-      case 'tournament_registration':
-        return 'Register for Tournament';
-      default:
-        return 'Process Action';
-    }
-  };
-
-  // Get action description for confirmation dialog
-  const getActionDescription = () => {
-    switch (actionType) {
-      case 'team_rebrand':
-        return `Change team name to "${formData.team_name}"`;
-      case 'online_id_change':
-        return `Change online ID to "${formData.online_id}" (${formData.platform})`;
-      case 'team_creation':
-        return `Create new team "${formData.team_name}"`;
-      case 'team_transfer':
-        const newCaptainName = members?.find((m: any) => m.user_id === formData.new_captain_id)?.user?.user_name || formData.new_captain_id;
-        return `Transfer team ownership to ${newCaptainName}`;
-      case 'roster_change':
-        const playerName = members?.find((m: any) => m.user_id === formData.player_id)?.user?.user_name || formData.player_id;
-        return `${formData.operation === 'add' ? 'Add' : formData.operation === 'remove' ? 'Remove' : 'Update'} player ${playerName}`;
-      case 'league_registration':
-        return `Register team for league ${formData.league_id}`;
-      case 'tournament_registration':
-        return `Register team for tournament ${formData.tournament_id}`;
-      default:
-        return 'Process team action';
-    }
-  };
-
-  return (
-    <div className="bg-base-200 rounded-lg shadow-lg p-6">
-      <h2 className="text-xl font-bold mb-4">
-        {getActionTitle()}
-        {isLoading && <span className="loading loading-spinner loading-md ml-2"></span>}
-      </h2>
+      const result = await requestService.processRequest(request);
       
-      <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
-        {renderForm()}
-        
-        <div className="flex justify-between mt-4">
+      if (result.payment_url) {
+        window.location.href = result.payment_url;
+      } else {
+        toast.success('Team transfer request submitted successfully');
+        onClose();
+      }
+    } catch (error) {
+      console.error('Error processing team transfer:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to process team transfer');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTransferClick = () => {
+    if (!selectedPlayer) return;
+    setShowConfirmation(true);
+  };
+
+  const handleCancelConfirmation = () => {
+    setShowConfirmation(false);
+  };
+
+  // If the action type is team_rebrand, render the TeamRebrandForm
+  if (actionType === 'team_rebrand') {
+    return (
+      <TeamRebrandForm
+        teamId={teamId!}
+        userId={userId}
+        currentName={initialValue || ''}
+        onCancel={onCancel || (() => {})}
+        onSuccess={onSuccess || (() => {})}
+      />
+    );
+  }
+
+  if (showConfirmation) {
+    return (
+      <div className="p-4">
+        <h2 className="text-xl font-bold mb-4">Confirm Team Transfer</h2>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+          <p className="text-yellow-800">
+            Are you sure you want to transfer ownership of <strong>{team?.name}</strong> to{' '}
+            <strong>{members?.find(m => m.user_id === formData.new_captain_id)?.display_name || formData.new_captain_id}</strong>?
+          </p>
+          <p className="mt-2 text-yellow-700">
+            This action will:
+          </p>
+          <ul className="list-disc list-inside mt-2 text-yellow-700 space-y-1">
+            <li>Remove your captain privileges</li>
+            <li>Make {members?.find(m => m.user_id === formData.new_captain_id)?.display_name || formData.new_captain_id} the new team captain</li>
+            <li>Charge a $20.00 transfer fee</li>
+          </ul>
+          <p className="mt-3 text-yellow-800 font-medium">
+            This action cannot be undone.
+          </p>
+        </div>
+
+        <div className="flex justify-end space-x-3">
           <button
-            type="button"
-            onClick={onCancel}
-            className="btn btn-ghost"
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+            onClick={handleCancelConfirmation}
             disabled={isLoading}
           >
             Cancel
           </button>
-          
           <button
-            type="submit"
-            className="btn btn-primary"
+            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+            onClick={handleTransferConfirm}
             disabled={isLoading}
           >
-            {requiresPayment ? `Continue (${paymentAmount} credits)` : 'Submit'}
+            {isLoading ? 'Processing...' : 'Confirm Transfer'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If we don't have required data, show loading or error state
+  if (actionType === 'team_transfer' && (!team || !user)) {
+    return (
+      <div className="p-4">
+        <div className="text-gray-500 text-center py-4">
+          Loading team data...
+        </div>
+      </div>
+    );
+  }
+
+  // Otherwise, render the form for other action types
+  return (
+    <div className="w-full">
+      <h2 className="text-2xl font-bold text-white mb-6">
+        {actionType === 'team_transfer' ? 'Transfer Team Ownership' :
+         actionType === 'online_id_change' ? 'Change Online ID' :
+         actionType === 'roster_change' ? 'Update Team Roster' :
+         actionType === 'team_creation' ? 'Create New Team' :
+         actionType === 'league_registration' ? 'Register for League' :
+         actionType === 'tournament_registration' ? 'Register for Tournament' :
+         'Process Request'}
+      </h2>
+      
+      <form onSubmit={handleFormSubmit} className="space-y-6">
+        {renderActionForm()}
+        
+        <div className="flex flex-col sm:flex-row gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-6 rounded-lg transition-colors duration-200 flex justify-center items-center"
+          >
+            {requiresPayment ? `Continue (${paymentAmount}$)` : 'Submit'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isLoading}
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-6 rounded-lg transition-colors duration-200"
+          >
+            Cancel
           </button>
         </div>
       </form>
@@ -658,4 +653,4 @@ const TeamActionProcessor: React.FC<TeamActionProcessorProps> = ({
   );
 };
 
-export default TeamActionProcessor; 
+export default TeamActionProcessor;

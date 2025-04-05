@@ -4,6 +4,9 @@ import type { PaymentDetails, PaymentResult, PaymentMetadata } from '../types/pa
 import { validatePaymentDetails } from '../utils/paymentUtils';
 import { DbPayment } from '../types/database';
 
+// API endpoint configuration
+const API_BASE_URL = ''; // Empty string for relative URLs within the same domain
+
 /**
  * Centralized service for handling all payment-related operations
  */
@@ -33,25 +36,22 @@ export class PaymentService {
       // Create valid metadata structure required by the backend DB validation
       const validMetadata = {
         transaction_details: {
-          processor_response: "pending",
+          processor_response: `pending_${Date.now()}`,
           authorization_code: `pending_${Date.now()}`
         },
         payment_method: {
           type: "square",
           last_four: "0000"
         },
-        // Include original metadata fields that match PaymentMetadata type
-        teamId: paymentDetails.teamId,
-        eventId: paymentDetails.eventId,
-        type: paymentDetails.type,
+        team_id: paymentDetails.teamId,
+        event_type: paymentDetails.type,
         request_id: paymentDetails.request_id,
-        playerId: paymentDetails.playerId,
-        playersIds: paymentDetails.playersIds || [],
-        // Store any additional data in a custom field
         custom_data: {
+          ...paymentDetails.metadata,
           item_id: paymentDetails.item_id,
           captainId: paymentDetails.captainId,
-          metadata: paymentDetails.metadata
+          playerId: paymentDetails.playerId,
+          playersIds: paymentDetails.playersIds || []
         }
       };
       
@@ -62,7 +62,7 @@ export class PaymentService {
         idempotencyKey: uuidv4(),
         note: paymentDetails.description,
         referenceId: paymentDetails.referenceId,
-        metadata: validMetadata // Include properly structured metadata
+        metadata: validMetadata
       };
       
       console.log('Payment params:', payload);
@@ -137,22 +137,26 @@ export class PaymentService {
    * Create a pending payment record in the database
    */
   private async createPendingPaymentRecord(paymentDetails: PaymentDetails) {
-    // Create base metadata with required fields
-    const baseMetadata: PaymentMetadata = {
-      type: paymentDetails.type,
-      eventId: paymentDetails.eventId,
-      teamId: paymentDetails.teamId,
-      playersIds: paymentDetails.playersIds || [],
-      playerId: paymentDetails.playerId,
-      request_id: paymentDetails.request_id,
-      item_id: paymentDetails.item_id,
-      captainId: paymentDetails.captainId,
-    };
-    
-    // Merge with custom metadata, ensuring base fields take precedence
+    // Create valid metadata structure required by the backend DB validation
     const metadata = {
-      ...paymentDetails.metadata,  // Custom metadata (lower precedence)
-      ...baseMetadata,             // Required fields (higher precedence)
+      transaction_details: {
+        processor_response: `pending_${Date.now()}`,
+        authorization_code: `pending_${Date.now()}`
+      },
+      payment_method: {
+        type: "square",
+        last_four: "0000"
+      },
+      team_id: paymentDetails.teamId,
+      event_type: paymentDetails.type,
+      request_id: paymentDetails.request_id,
+      custom_data: {
+        ...paymentDetails.metadata,
+        item_id: paymentDetails.item_id,
+        captainId: paymentDetails.captainId,
+        playerId: paymentDetails.playerId,
+        playersIds: paymentDetails.playersIds || []
+      }
     };
     
     const paymentId = paymentDetails.id || uuidv4();
@@ -185,16 +189,28 @@ export class PaymentService {
     // Extract payment data from the response
     const payment = responseData.payment || responseData;
     
-    const metadata: PaymentMetadata = {
-      type: paymentDetails.type,
-      eventId: paymentDetails.eventId,
-      teamId: paymentDetails.teamId,
-      playersIds: paymentDetails.playersIds,
-      playerId: paymentDetails.playerId,
+    const metadata = {
+      transaction_details: {
+        processor_response: payment.id || `completed_${Date.now()}`,
+        authorization_code: payment.id || `auth_${Date.now()}`
+      },
+      payment_method: {
+        type: payment.card_details?.card?.brand?.toLowerCase() || "square",
+        last_four: payment.card_details?.card?.last_4 || "0000"
+      },
+      team_id: paymentDetails.teamId,
+      event_type: paymentDetails.type,
       request_id: paymentDetails.request_id,
-      squarePaymentId: payment.id,
-      receiptUrl: payment.receiptUrl,
-      square_response: payment
+      custom_data: {
+        ...paymentDetails.metadata,
+        item_id: paymentDetails.item_id,
+        captainId: paymentDetails.captainId,
+        playerId: paymentDetails.playerId,
+        playersIds: paymentDetails.playersIds || [],
+        squarePaymentId: payment.id,
+        receiptUrl: payment.receiptUrl,
+        square_response: payment
+      }
     };
     
     const paymentUpdate: Partial<DbPayment> = {
@@ -409,5 +425,29 @@ export class PaymentService {
     }
     
     return data;
+  }
+
+  // Add team rebrand endpoint if it doesn't exist
+  async createPendingTeamRebrand(requestData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/team/rebrand`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Error creating team rebrand request:', errorData);
+        throw new Error(errorData?.detail || `Failed to create team rebrand request: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error in createPendingTeamRebrand:', error);
+      throw error;
+    }
   }
 } 

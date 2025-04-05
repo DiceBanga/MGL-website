@@ -2,10 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uuid
+import logging
+import json
 
 # Import the dependency to get the RequestService
 from dependencies import get_request_service
 from services.request_service import RequestService
+
+# Add this at the top with other imports
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,6 +25,7 @@ class TeamTransferRequest(RequestBase):
     request_type: str = "team_transfer"
     new_captain_id: str
     old_captain_id: str
+    item_id: str
     payment_data: Optional[Dict[str, Any]] = None
 
 class RosterChangeRequest(RequestBase):
@@ -46,6 +52,7 @@ class TeamRebrandRequest(RequestBase):
     request_type: str = "team_rebrand"
     old_name: str
     new_name: str
+    item_id: str
     payment_data: Optional[Dict[str, Any]] = None
 
 class OnlineIdChangeRequest(RequestBase):
@@ -69,9 +76,21 @@ async def transfer_team(
     request_service: RequestService = Depends(get_request_service)
 ):
     try:
-        result = await request_service.process_request(request.dict())
+        # Log the complete request data
+        request_dict = request.dict()
+        logger.info(f"Team transfer request received: {json.dumps(request_dict, default=str)}")
+        
+        # Ensure item_id is present
+        if "item_id" not in request_dict or not request_dict["item_id"]:
+            logger.error("Missing item_id in team transfer request")
+            raise HTTPException(status_code=400, detail="Missing required field: item_id")
+        
+        # Process the request
+        result = await request_service.process_request(request_dict)
+        logger.info(f"Team transfer request processed successfully: {json.dumps(result, default=str)}")
         return result
     except Exception as e:
+        logger.error(f"Error processing team transfer request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/team/roster", response_model=Dict[str, Any])
@@ -113,9 +132,39 @@ async def rebrand_team(
     request_service: RequestService = Depends(get_request_service)
 ):
     try:
-        result = await request_service.process_request(request.dict())
+        # Log the complete request data
+        request_dict = request.dict()
+        logger.info(f"Team rebrand request received: {json.dumps(request_dict, default=str)}")
+        
+        # Ensure item_id is present
+        if not request_dict.get("item_id"):
+            logger.error("Missing item_id in team rebrand request")
+            raise HTTPException(status_code=400, detail="Missing required field: item_id")
+        
+        # Verify the item_id exists in the items table
+        try:
+            item_query = request_service.supabase.table("items").select("*").eq("item_id", request_dict["item_id"])
+            item_response = item_query.execute()
+            
+            if not item_response.data:
+                logger.error(f"Invalid item_id in team rebrand request: {request_dict['item_id']}")
+                raise HTTPException(status_code=400, detail=f"Invalid item_id: {request_dict['item_id']}")
+                
+            # Update the item price if it doesn't match
+            item_price = item_response.data[0]["current_price"]
+            if "payment_data" in request_dict and request_dict["payment_data"] and "amount" in request_dict["payment_data"]:
+                if request_dict["payment_data"]["amount"] != item_price:
+                    logger.warning(f"Price mismatch: Request price {request_dict['payment_data']['amount']} doesn't match item price {item_price}")
+                    request_dict["payment_data"]["amount"] = item_price
+        except Exception as e:
+            logger.error(f"Error validating item_id: {str(e)}")
+        
+        # Process the request
+        result = await request_service.process_request(request_dict)
+        logger.info(f"Team rebrand request processed successfully: {json.dumps(result, default=str)}")
         return result
     except Exception as e:
+        logger.error(f"Error processing team rebrand request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/team/online-id", response_model=Dict[str, Any])
