@@ -22,9 +22,11 @@ This document outlines the architecture and flow of the payment processing, requ
 ## 1. Payment Service
 
 ### Purpose:
+
 Handles payment processing for all monetized actions including team transfers, tournament registrations, and roster changes.
 
 ### Implementation:
+
 - Located in: `frontend/src/services/PaymentService.ts`
 - Core methods:
   - `processSquarePayment`: Processes payments through Square
@@ -32,6 +34,7 @@ Handles payment processing for all monetized actions including team transfers, t
   - `recordPaymentInDatabase`: Updates payment record after successful payment
 
 ### Payment Flow:
+
 1. User initiates action that requires payment
 2. `createPaymentDetails` utility creates payment object with proper metadata
 3. Payment details include:
@@ -43,6 +46,7 @@ Handles payment processing for all monetized actions including team transfers, t
 6. Update payment record with success/failure information
 
 ### Metadata Structure:
+
 ```javascript
 {
   "transaction_details": {
@@ -66,12 +70,48 @@ Handles payment processing for all monetized actions including team transfers, t
 }
 ```
 
+## Item IDs for Payment Reference
+
+| Item Name               | item_id |
+| ----------------------- | ------- |
+| League Registration     | 1004    |
+| Tournament Registration | 1003    |
+| Team Transfer           | 1002    |
+| Team Creation           | 1001    |
+| Roster Change           | 1005    |
+| Team Rebrand            | 1006    |
+| Online ID Change        | 1007    |
+
+Use these `item_id` values in the `reference_id` generation for payment requests.
+
+## Reference ID Format
+
+The `reference_id` sent to Square **must** be:
+
+```
+{item_id}-{request_id with hyphens removed}
+```
+
+Example:
+
+```
+1003-b8f7d0f2edca44c3bd1fb0a5765b3a2c
+```
+
+- The `item_id` is the **numeric string** from the `items` table (e.g., `'1003'` for Tournament Registration).
+- The `request_id` is a UUID with hyphens removed (32 characters).
+- Total length is about 37 characters, compliant with Square's 40-character limit.
+
+This format is used for **all payment types** to ensure consistency and avoid Square API errors.
+
 ## 2. Request Service
 
 ### Purpose:
+
 Manages requests for actions that require approval, validation, or payment, including team transfers, league registrations, and tournament registrations.
 
 ### Implementation:
+
 - Core tables:
   - `team_change_requests`: Stores requests for team-related changes
   - Other request tables for specific actions
@@ -80,6 +120,7 @@ Manages requests for actions that require approval, validation, or payment, incl
   - `handle_request_status_update`: Database trigger function that executes actions
 
 ### Request Flow:
+
 1. User initiates action through UI
 2. System creates payment details (if applicable)
 3. After successful payment, system creates request with status 'processing'
@@ -88,6 +129,7 @@ Manages requests for actions that require approval, validation, or payment, incl
 6. Request status updated to 'completed' or 'failed' based on execution result
 
 ### Status Lifecycle:
+
 - `pending`: Initial state, waiting for payment or approval
 - `processing`: Payment completed, request is being executed
 - `completed`: Request successfully executed
@@ -95,21 +137,22 @@ Manages requests for actions that require approval, validation, or payment, incl
 - `rejected`: Request was rejected by administrator
 
 ### Request Creation (Team Transfer Example):
+
 ```javascript
 const { data, error } = await supabase
-  .from('team_change_requests')
+  .from("team_change_requests")
   .insert({
     id: requestId,
     team_id: teamId,
-    request_type: 'team_transfer',
+    request_type: "team_transfer",
     requested_by: requestedBy,
     player_id: playerId,
     old_value: oldValue,
     new_value: newValue,
-    status: 'processing', // Important: Set to 'processing' to trigger immediate execution
+    status: "processing", // Important: Set to 'processing' to trigger immediate execution
     payment_reference: paymentId,
     item_id: formattedItemId,
-    metadata: cleanMetadata
+    metadata: cleanMetadata,
   })
   .select()
   .single();
@@ -118,15 +161,18 @@ const { data, error } = await supabase
 ## 3. Webhook Service
 
 ### Purpose:
+
 Handles asynchronous payment notifications from Square and updates request statuses accordingly.
 
 ### Implementation:
+
 - Located in: `backend/routes/webhooks.py` and database trigger functions
 - Core methods:
   - `handle_square_webhook`: Processes webhook notifications from Square
   - `process_request_update`: Updates request status based on payment status
 
 ### Webhook Flow:
+
 1. Square sends webhook notification when payment status changes
 2. Webhook handler extracts payment ID and determines associated request
 3. Updates request status based on payment outcome
@@ -134,6 +180,7 @@ Handles asynchronous payment notifications from Square and updates request statu
 5. Database trigger executes the appropriate action based on request type
 
 ### Database Trigger Implementation:
+
 ```sql
 CREATE OR REPLACE FUNCTION public.handle_request_status_update()
 RETURNS trigger
@@ -147,12 +194,12 @@ begin
   -- Only handle team transfers in 'processing' state
   IF NEW.request_type = 'team_transfer' AND NEW.status = 'processing' THEN
     -- Get the captain IDs
-    SELECT id INTO old_captain_id 
-    FROM auth.users 
+    SELECT id INTO old_captain_id
+    FROM auth.users
     WHERE email = NEW.metadata->>'oldCaptainName';
 
-    SELECT user_id INTO new_captain_id 
-    FROM public.players 
+    SELECT user_id INTO new_captain_id
+    FROM public.players
     WHERE display_name = NEW.metadata->>'newCaptainName';
 
     -- Call the transfer function directly
@@ -163,8 +210,8 @@ begin
     );
 
     -- Update request status to completed
-    UPDATE team_change_requests 
-    SET 
+    UPDATE team_change_requests
+    SET
       status = 'completed',
       processed_at = NOW(),
       updated_at = NOW(),
@@ -192,16 +239,19 @@ $function$;
 ### For New Request Types:
 
 1. **UI Component Structure**:
+
    - Use `TeamActionProcessor` component as a template for action flows
    - Implement two-step confirmation for all paid actions
    - Display clear feedback on action status
 
 2. **Payment Details Creation**:
+
    - Use the `createPaymentDetails` utility function
    - Include all necessary metadata for request creation
    - Follow standard reference ID format: `itemId-requestUUID`
 
 3. **Request Creation**:
+
    - Set status to 'processing' immediately after successful payment
    - Include complete metadata needed for action execution
    - Use consistent field naming across different request types
@@ -216,8 +266,8 @@ $function$;
 ```javascript
 // Example implementation for tournament registration
 const paymentDetails = createPaymentDetails(
-  'tournament_registration',
-  'Tournament Registration',
+  "tournament_registration",
+  "Tournament Registration",
   registrationFee,
   `Register ${team.name} for ${tournament.name}`,
   {
@@ -226,13 +276,13 @@ const paymentDetails = createPaymentDetails(
     item_id: itemId,
     request_id: requestId,
     tournamentId: tournament.id,
-    playersIds: selectedPlayers
+    playersIds: selectedPlayers,
   }
 );
 
 // Add metadata for the tournament registration request
 paymentDetails.metadata = {
-  requestType: 'tournament_registration',
+  requestType: "tournament_registration",
   tournamentId: tournament.id,
   tournamentName: tournament.name,
   teamId: team.id,
@@ -244,16 +294,16 @@ paymentDetails.metadata = {
     requestedBy: user.id,
     itemId: itemId,
     tournamentId: tournament.id,
-    oldValue: '',
+    oldValue: "",
     newValue: tournament.id,
     requestId: requestId,
     metadata: {
       tournamentName: tournament.name,
       teamName: team.name,
       playerIds: selectedPlayers,
-      requestId: requestId
-    }
-  }
+      requestId: requestId,
+    },
+  },
 };
 ```
 
@@ -262,11 +312,13 @@ paymentDetails.metadata = {
 ### Common Issues:
 
 1. **Payment Processing Errors**:
+
    - Check payment metadata structure
    - Verify Square API keys and environment settings
    - Examine webhook logs for payment status
 
 2. **Request Execution Failures**:
+
    - Check database triggers are correctly registered
    - Verify metadata contains required fields
    - Look for error messages in request.last_error field
@@ -286,11 +338,13 @@ paymentDetails.metadata = {
 ## 6. Testing the Payment & Request Flow
 
 1. **Unit Testing**:
+
    - Mock Square payment responses
    - Test request creation with various metadata formats
    - Verify trigger functions with simulated status changes
 
 2. **Integration Testing**:
+
    - Test full payment flow with Square sandbox
    - Verify webhook handling with simulated notifications
    - Test database triggers with real data
@@ -309,4 +363,4 @@ paymentDetails.metadata = {
 - Validate webhook handling in isolated test environment
 - Version payment and request schemas for backward compatibility
 - Test payment flows with Square sandbox in CI pipeline
-- Monitor payment success rates and request completion rates 
+- Monitor payment success rates and request completion rates

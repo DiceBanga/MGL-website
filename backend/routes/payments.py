@@ -24,6 +24,7 @@ class PaymentRequest(BaseModel):
 
 @router.post("/payments")
 async def create_payment(request: PaymentRequest, req: Request):
+    print("[Backend] Received payment request with reference_id:", request.referenceId)
     try:
         # Import here to avoid circular imports
         from main import payment_service

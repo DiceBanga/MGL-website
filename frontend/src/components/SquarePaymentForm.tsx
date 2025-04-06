@@ -215,23 +215,6 @@ export function SquarePaymentForm({
           </p>
         </div>
 
-        <button
-          type="submit"
-          disabled={processing}
-          className="w-full bg-green-700 text-white py-3 rounded-lg font-medium hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-        >
-          {processing ? (
-            <>
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-              Processing...
-            </>
-          ) : (
-            <>ERROR:  23514: check constraint "valid_item_id" of relation "items" is violated by some row
-              <CreditCard className="w-5 h-5 mr-2" />
-              Pay ${paymentDetails.amount.toFixed(2)}
-            </>
-          )}
-        </button>
       </form>
     </div>
   );

@@ -64,7 +64,7 @@ const PlayerSelectionForm: React.FC<PlayerSelectionFormProps> = ({
               user_id,
               display_name,
               avatar_url,
-              online_id
+              email
             )
           `)
           .eq('team_id', teamId);

@@ -17,41 +17,15 @@ export const generateReferenceId = (
   // If a request ID is provided, use a shortened version that's Square-compatible
   // Square requires reference_id to be 40 characters or less
   if (requestId) {
-    // Remove hyphens from UUID and take the first 32 characters
-    const shortRequestId = requestId.replace(/-/g, '').slice(0, 32);
-    
-    // Add the item ID as a prefix for categorization
-    return `${itemId}-${shortRequestId}`;
-    // This format: "1002-98ddd206fe9b46c79e562625080a86fb"
-    // Is only ~37 characters and preserves the request ID in a recoverable format
+    // Remove hyphens from UUID
+    const shortRequestId = requestId.replace(/-/g, '');
+    // Use the numeric item_id string (e.g., '1003') instead of UUID
+    const itemIdPart = itemId.length > 4 ? itemId.slice(0, 4) : itemId;  // Defensive: truncate UUID if passed
+    return `${itemIdPart}-${shortRequestId}`;
+    // Example: 1003-b8f7d0f2edca44c3bd1fb0a5765b3a2c (37 chars)
   }
-  
-  // Create date part
-  const date = new Date();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  const year = date.getFullYear();
-  const dateStr = `${month}${day}${year}`;
-  
-  // Process IDs - take first 8 chars without hyphens
-  const processId = (id?: string) => id ? id.replace(/-/g, '').slice(0, 8) : '00000000';
-  
-  const teamIdPart = processId(teamId);
-  const captainIdPart = processId(captainId);
-  const eventIdPart = processId(eventId);
-  const playerIdPart = processId(playerId);
-  
-  // Construct reference ID based on what's available
-  if (playerId) {
-    // For player-specific operations
-    return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}-${playerIdPart}`;
-  } else if (eventId) {
-    // For tournament/league registrations
-    return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}-${eventIdPart}`;
-  } else {
-    // Fallback for other payment types
-    return `${dateStr}-${itemId}-${teamIdPart}-${captainIdPart}`;
-  }
+  // Fallback if no requestId provided
+  return `${itemId}-${uuidv4().replace(/-/g, '')}`;
 };
 
 /**
@@ -95,12 +69,13 @@ export const createPaymentDetails = (
     playerId?: string;
     request_id?: string;
     item_id: string;
+    referenceId?: string; // Allow passing a pre-generated referenceId
   }
 ): PaymentDetails => {
   const { teamId, eventId, captainId, playersIds, playerId, request_id, item_id } = options;
   
-  // Generate reference ID
-  const referenceId = generateReferenceId(
+  // Use provided referenceId if available, else generate one
+  const referenceId = options.referenceId || generateReferenceId(
     item_id,
     teamId,
     captainId,
@@ -108,6 +83,7 @@ export const createPaymentDetails = (
     playerId,
     request_id
   );
+  console.debug("[PaymentUtils] Generated referenceId:", referenceId);
   
   // Generate a valid UUID for the payment ID
   const paymentId = uuidv4();
@@ -178,5 +154,6 @@ export const validatePaymentDetails = (details: PaymentDetails): string | null =
       break;
   }
   
+console.log("Test referenceId:", generateReferenceId("1001", undefined, undefined, undefined, undefined, "b8f7d0f2-edca-44c3-bd1f-b0a5765b3a2c"));
   return null;
 }; 

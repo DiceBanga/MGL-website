@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { Edit, UserPlus, Trash, RefreshCw, DollarSign, Users, Trophy, UserCog, Paintbrush, ChevronRight } from 'lucide-react';
 import { DbTeam, DbTeamMember } from '../../types/database';
-import { createPaymentDetails } from '../../utils/paymentUtils';
+import { createPaymentDetails, generateReferenceId } from '../../utils/paymentUtils';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 import { v4 as uuidv4 } from 'uuid';
 import TeamActionProcessor from '../../components/TeamActionProcessor';
@@ -276,6 +276,16 @@ const TeamDashboard = () => {
       console.log(`  Price: ${price}, Item ID: ${itemId}, Request ID: ${requestId}`);
 
       // 1. Create Payment Details
+      const referenceId = generateReferenceId(
+        itemId,
+        team?.id,
+        user?.id,
+        eventId,
+        undefined, // playerId not needed here
+        requestId
+      );
+      console.debug("[TeamDashboard] Generated referenceId:", referenceId);
+
       const paymentDetails = createPaymentDetails(
         currentRegistrationType, // 'league' or 'tournament'
         `${isTournament ? 'Tournament' : 'League'} Registration for ${eventName}`, // More specific description
@@ -287,8 +297,9 @@ const TeamDashboard = () => {
           eventId: eventId,
           item_id: itemId, // Use the specific item ID
           playersIds: selectedPlayerIds, // Pass selected players
-          request_id: requestId // Crucial for linking payment and request
-        }
+          request_id: requestId, // Crucial for linking payment and request
+          referenceId: referenceId // Use the generated reference ID
+        } as any
       );
 
       // Add metadata specifically structured for the team_change_requests table
@@ -605,23 +616,24 @@ const TeamDashboard = () => {
   
   const fetchItemPrices = async () => {
     try {
-      // Fetch prices from the database
-      const { data: priceData, error: priceError } = await supabase
-        .from('item_prices')
-        .select('*');
+      // Fetch prices from the correct 'items' table
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('items')
+        .select('id, item_name, item_id, current_price, item_description')
+        .eq('enabled', true);
         
-      if (priceError) throw priceError;
+      if (itemsError) throw itemsError;
       
       // Transform the data to a more usable format
       const prices: {[key: string]: number} = {};
       const ids: {[key: string]: string} = {};
       
-      priceData?.forEach(item => {
+      itemsData?.forEach(item => {
         // Use uppercase keys with underscores to match with TeamActionProcessor
         let key = '';
         
         // Map item names to standardized keys
-        switch(item.name) {
+        switch(item.item_name) {
           case 'Team Rebrand':
             key = 'TEAM_REBRAND';
             break;
@@ -641,10 +653,10 @@ const TeamDashboard = () => {
             key = 'TEAM_TRANSFER';
             break;
           default:
-            key = item.name;
+            key = item.item_name;
         }
         
-        prices[key] = item.price;
+        prices[key] = item.current_price;
         ids[key] = item.id;
       });
       

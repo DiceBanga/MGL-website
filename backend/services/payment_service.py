@@ -13,6 +13,7 @@ class PaymentService:
         self.logger = logging.getLogger(__name__)
 
     async def process_payment(self, payment_data: dict) -> dict:
+        print("[Backend] PaymentService.process_payment received reference_id:", payment_data.get("reference_id"))
         try:
             # Log the payment request
             self.logger.info(f"Processing payment: amount={payment_data['amount']}, reference={payment_data.get('reference_id')}")

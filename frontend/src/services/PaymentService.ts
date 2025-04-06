@@ -55,6 +55,7 @@ export class PaymentService {
         }
       };
       
+      console.debug("[PaymentService] Using referenceId in payment request:", paymentDetails.referenceId);
       // Create request payload - match the backend's expected format
       const payload = {
         sourceId,
