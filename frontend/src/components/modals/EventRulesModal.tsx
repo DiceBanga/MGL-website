@@ -1,4 +1,5 @@
 import React from 'react';
+import { Transition } from '@headlessui/react';
 import Modal from './Modal'; // Use the Modal component we just created in the same directory
 // We will use standard HTML buttons with Tailwind classes for now
 
@@ -27,10 +28,6 @@ const EventRulesModal: React.FC<EventRulesModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
-  if (!isOpen || !eventDetails) {
-    return null;
-  }
-
   const formatCurrency = (amount?: number) => {
     if (amount === undefined || amount === null) return 'N/A';
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -55,15 +52,15 @@ const EventRulesModal: React.FC<EventRulesModalProps> = ({
     <Modal isOpen={isOpen} onClose={onCancel} title={title}>
       <div className="p-6 space-y-4 text-gray-700 dark:text-gray-300">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-          {eventDetails.name || 'Event Details'}
+          {eventDetails?.name || 'Event Details'}
         </h3>
 
         <div className="space-y-2">
-          <p><strong>Registration Fee:</strong> {formatCurrency(eventDetails.registrationFee)}</p>
-          <p><strong>Registration Opens:</strong> {formatDate(eventDetails.registrationStartDate)}</p>
-          <p><strong>{startDateLabel}:</strong> {formatDate(eventDetails.startDate)}</p>
-          {eventType === 'league' && eventDetails.playoffStartDate && (
-            <p><strong>Playoffs Start:</strong> {formatDate(eventDetails.playoffStartDate)}</p>
+          <p><strong>Registration Fee:</strong> {formatCurrency(eventDetails?.registrationFee)}</p>
+          <p><strong>Registration Opens:</strong> {formatDate(eventDetails?.registrationStartDate)}</p>
+          <p><strong>{startDateLabel}:</strong> {formatDate(eventDetails?.startDate)}</p>
+          {eventType === 'league' && eventDetails?.playoffStartDate && (
+            <p><strong>Playoffs Start:</strong> {formatDate(eventDetails?.playoffStartDate)}</p>
           )}
         </div>
 
@@ -71,7 +68,7 @@ const EventRulesModal: React.FC<EventRulesModalProps> = ({
           <h4 className="text-lg font-medium mb-2 text-gray-800 dark:text-gray-200">Rules</h4>
           {/* Render rules - potentially use a markdown renderer if rules are in markdown */}
           <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-            {eventDetails.rules || 'No rules provided.'}
+            {eventDetails?.rules || 'No rules provided.'}
           </div>
         </div>
 
