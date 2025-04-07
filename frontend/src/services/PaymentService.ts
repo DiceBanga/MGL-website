@@ -317,25 +317,21 @@ export class PaymentService {
         console.error('Error updating registration:', updateError);
       }
     } else {
-      // Extract season from metadata or default to 1
-      let seasonNumber = 1;
-      if (paymentDetails.metadata) {
-        seasonNumber = paymentDetails.metadata.season
-          || paymentDetails.metadata.changeRequestData?.season
-          || paymentDetails.metadata.changeRequestData?.metadata?.season
-          || 1;
-      }
-
       // Create new registration
       const { error: insertError } = await supabase
         .from(table)
         .insert({
           team_id: paymentDetails.teamId,
           [idField]: paymentDetails.eventId,
-          status: 'pending', // Use allowed status value
+          status: 'pending', // Changed from 'confirmed' to 'pending' to match the constraint
           payment_status: 'paid',
           registration_date: new Date().toISOString(),
-          season: seasonNumber
+          // Add season field ONLY for league registrations, not for tournaments
+          ...(paymentDetails.type === 'league' && {
+            season: paymentDetails.metadata?.season || 
+                    paymentDetails.metadata?.changeRequestData?.metadata?.season || 
+                    1
+          })
         });
       
       if (insertError) {
@@ -357,15 +353,24 @@ export class PaymentService {
             ? 'tournament_rosters'
             : 'league_rosters';
           
-          const regIdField = paymentDetails.type === 'tournament'
-            ? 'tournament_registration_id'
-            : 'league_registration_id';
+          // For tournament rosters, use tournament_id directly
+          // For league rosters, use registration_id
+          let rosterInserts;
           
-          // Insert players into roster
-          const rosterInserts = paymentDetails.playersIds.map(playerId => ({
-            [regIdField]: regData.id,
-            player_id: playerId
-          }));
+          if (paymentDetails.type === 'tournament') {
+            // Tournament rosters link directly to tournament_id and team_id
+            rosterInserts = paymentDetails.playersIds.map(playerId => ({
+              tournament_id: paymentDetails.eventId,
+              team_id: paymentDetails.teamId,
+              player_id: playerId
+            }));
+          } else {
+            // League rosters link to the registration record
+            rosterInserts = paymentDetails.playersIds.map(playerId => ({
+              league_registration_id: regData.id,
+              player_id: playerId
+            }));
+          }
           
           const { error: rosterError } = await supabase
             .from(rosterTable)

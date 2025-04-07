@@ -662,7 +662,7 @@ const TeamDashboard = () => {
         }
         
         prices[key] = item.current_price;
-        ids[key] = item.id;
+        ids[key] = item.item_id;
       });
       
       // Set default prices if none were fetched
@@ -1046,19 +1046,39 @@ const TeamDashboard = () => {
           captainId: user.id,
           eventId: tournamentId,
           item_id: itemId,
-          playersIds: team.members.map(member => member.user_id), // Include all team members
+          playersIds: team.members.map(member => member.user_id),
           request_id: requestId
         }
       );
-      
-      // Add metadata for the registration
+
+      // Add metadata for the registration, including changeRequestType and changeRequestData
+      paymentDetails.changeRequestType = 'tournament_registration';
       paymentDetails.metadata = {
-        tournamentId,
-        tournamentName,
-        teamId: team.id,
+        requestType: 'tournament_registration',
+        eventName: tournamentName,
         teamName: team.name,
+        playerIds: team.members.map(member => member.user_id),
         requestId,
-        // No need for changeRequestData as tournament registrations are handled differently
+        teamId: team.id,
+        tournamentId,
+        season: 0,
+        changeRequestData: {
+          teamId: team.id,
+          requestedBy: user.id,
+          itemId: itemId,
+          tournamentId: tournamentId,
+          oldValue: '',
+          newValue: tournamentId,
+          requestId: requestId,
+          playerId: team.members.map(member => member.user_id), // Pass array of player IDs
+          metadata: {
+            eventName: tournamentName,
+            teamName: team.name,
+            playerIds: team.members.map(member => member.user_id),
+            requestId: requestId,
+            season: 0
+          }
+        }
       };
       
       // Navigate to the payment page with the payment details

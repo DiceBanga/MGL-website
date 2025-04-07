@@ -1,6 +1,7 @@
 export interface PaymentDetails {
   id: string;
   type: 'tournament' | 'league' | 'team_transfer' | 'roster_change' | 'online_id_change' | 'team_rebrand' | 'player_signing';
+  changeRequestType?: string;
   name: string;
   amount: number;
   description: string;

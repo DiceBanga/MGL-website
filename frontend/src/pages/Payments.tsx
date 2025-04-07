@@ -225,9 +225,10 @@ const Payments = () => {
         playerIdsArray = [playerId];
       }
 
-      // For league_registration, player ID validation is optional
+      // For league_registration or tournament_registration, player ID validation is optional
       // For other change request types, require at least one valid player ID
-      if (changeRequestType !== 'league_registration') {
+      if (changeRequestType !== 'league_registration' && 
+          changeRequestType !== 'tournament_registration') {
         if (
           playerIdsArray.length === 0 ||
           !playerIdsArray.every((id) => validateUUID(id))
@@ -237,10 +238,12 @@ const Payments = () => {
         }
       }
 
-      // For league_registration, if no player IDs, use the team captain as the player
-      if (changeRequestType === 'league_registration' && playerIdsArray.length === 0) {
+      // For league/tournament registrations, if no player IDs, use the team captain as the player
+      if ((changeRequestType === 'league_registration' || 
+           changeRequestType === 'tournament_registration') && 
+           playerIdsArray.length === 0) {
         playerIdsArray = [requestedBy];
-        console.log('Using team captain ID as player ID for league registration:', requestedBy);
+        console.log('Using team captain ID as player ID for registration:', requestedBy);
       }
       
       // Validate item_id format (must be a 4-digit number)
@@ -292,6 +295,7 @@ const Payments = () => {
               changeRequestType === 'team_transfer' ? '1002' :
               changeRequestType === 'team_rebrand' ? '1006' :
               changeRequestType === 'online_id_change' ? '1007' :
+              changeRequestType === 'tournament_registration' ? '1003' :
               changeRequestType === 'roster_change' ? '1005' : '1000';
             console.warn(`Using default item ID ${formattedItemId} for ${changeRequestType}`);
           }
