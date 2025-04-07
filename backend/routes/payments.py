@@ -21,10 +21,18 @@ class PaymentRequest(BaseModel):
     note: str = None
     referenceId: str = None
     metadata: Optional[Dict[str, Any]] = None
+    season: Optional[int] = None  # Add season number
 
 @router.post("/payments")
 async def create_payment(request: PaymentRequest, req: Request):
     print("[Backend] Received payment request with reference_id:", request.referenceId)
+    print("[Backend] Received payment request with season:", getattr(request, 'season', 'N/A'))
+
+    # Add season to metadata if not present
+    if not request.metadata:
+        request.metadata = {}
+    if 'season' not in request.metadata or request.metadata['season'] is None:
+        request.metadata['season'] = getattr(request, 'season', 1)
     try:
         # Import here to avoid circular imports
         from main import payment_service

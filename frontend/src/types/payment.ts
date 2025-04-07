@@ -12,6 +12,7 @@ export interface PaymentDetails {
   request_id?: string;  // Used for change requests
   referenceId?: string;
   item_id?: string;     // Item ID for the payment
+  season?: number;      // Add season number for league registrations
   metadata?: Record<string, any>; // Additional metadata for specific payment types
 }
 

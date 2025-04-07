@@ -102,6 +102,10 @@ class RequestService:
         elif request_type in ["tournament_registration", "league_registration"]:
             if "event_id" not in request_data or "player_ids" not in request_data:
                 raise ValueError("Missing event_id or player_ids for registration request")
+        
+        elif request_type == "league_registration":
+            if "season" not in request_data:
+                raise ValueError("Missing season for registration request")        
                 
         elif request_type == "team_rebrand":
             if "new_name" not in request_data:
@@ -174,6 +178,8 @@ class RequestService:
         
         elif request_data["request_type"] == "league_registration":
             request_record["league_id"] = request_data.get("league_id", "")
+            request_record["season"] = request_data.get("season", 1)
+
         
         # Insert into team_change_requests table
         try:

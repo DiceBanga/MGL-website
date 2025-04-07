@@ -53,6 +53,8 @@ const PaymentPage: React.FC = () => {
   }, [navPaymentDetails, changeRequestType, changeRequestOptions, location.state]);
   
   // Handle successful payment
+  console.debug("[PaymentPage] paymentDetails before sending to backend:", displayDetails);
+
   const handlePaymentSuccess = () => {
     // Redirect to success page or team dashboard
     navigate(`/teams`);

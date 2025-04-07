@@ -32,6 +32,7 @@ const RegistrationSummaryModal: React.FC<RegistrationSummaryModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  console.debug("[RegistrationSummaryModal] eventDetails:", eventDetails);
   if (!isOpen || !eventDetails) {
     return null;
   }
@@ -69,6 +70,14 @@ const RegistrationSummaryModal: React.FC<RegistrationSummaryModalProps> = ({
           <p className="text-xl font-semibold text-white">{formatCurrency(eventDetails.registrationFee)}</p>
           <p className="text-xs text-gray-400">Payment will be processed upon confirmation.</p>
         </div>
+
+        {/* Season Info */}
+        {eventType === 'league' && eventDetails && 'season' in eventDetails && (
+          <div className="mt-4 pt-4 border-t border-gray-700">
+            <h4 className="text-lg font-medium mb-2 text-gray-800 dark:text-gray-200">Season</h4>
+            <p className="text-lg font-semibold text-white">{(eventDetails as any).season || (eventDetails as any).current_season}</p>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-700">

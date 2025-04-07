@@ -187,39 +187,60 @@ const Payments = () => {
       return null;
     }
     
-    const { 
-      teamId, 
-      requestedBy, 
-      itemId, 
-      playerId, 
-      oldValue, 
-      newValue, 
-      metadata 
+    const {
+      teamId,
+      requestedBy,
+      itemId,
+      playerId,
+      oldValue,
+      newValue,
+      metadata
     } = paymentDetails.metadata.changeRequestData;
-    
+
     try {
       // Always generate a new UUID for the team change request
       const requestId = uuidv4();
-      
+
       console.log('Creating team change request with ID:', requestId);
       console.log('Team ID:', teamId);
-      console.log('Player ID:', playerId);
+      console.log('Player ID(s):', playerId);
       console.log('Payment ID (reference only):', paymentId);
-      
+
       // Validate UUIDs
       const validateUUID = (id: string) => {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         return uuidRegex.test(id);
       };
-      
+
       if (!validateUUID(teamId)) {
         console.error('Invalid team ID format:', teamId);
         return null;
       }
-      
-      if (!validateUUID(playerId)) {
-        console.error('Invalid player ID format:', playerId);
-        return null;
+
+      // Normalize playerId to an array
+      let playerIdsArray: string[] = [];
+      if (Array.isArray(playerId)) {
+        playerIdsArray = playerId;
+      } else if (typeof playerId === 'string' && playerId.trim() !== '') {
+        playerIdsArray = [playerId];
+      }
+
+      // For league_registration, player ID validation is optional
+      // For other change request types, require at least one valid player ID
+      if (changeRequestType !== 'league_registration') {
+        if (
+          playerIdsArray.length === 0 ||
+          !playerIdsArray.every((id) => validateUUID(id))
+        ) {
+          console.error('Invalid player ID(s) format:', playerIdsArray);
+          return null;
+        }
+      }
+
+      // For league_registration, if no player IDs, use the team captain as the player
+      if (changeRequestType === 'league_registration' && playerIdsArray.length === 0) {
+        playerIdsArray = [requestedBy];
+        console.log('Using team captain ID as player ID for league registration:', requestedBy);
       }
       
       // Validate item_id format (must be a 4-digit number)
@@ -293,7 +314,7 @@ const Payments = () => {
           team_id: teamId,
           request_type: changeRequestType,
           requested_by: requestedBy,
-          player_id: playerId,
+          player_id: playerIdsArray, // Use the array of player IDs
           old_value: oldValue,
           new_value: newValue,
           status: 'processing',

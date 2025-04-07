@@ -44,7 +44,7 @@ class TournamentRegistrationRequest(RequestBase):
 class LeagueRegistrationRequest(RequestBase):
     request_type: str = "league_registration"
     league_id: str
-    season: Optional[int] = None
+    season: Optional[int] = 1
     player_ids: List[str]
     payment_data: Optional[Dict[str, Any]] = None
 

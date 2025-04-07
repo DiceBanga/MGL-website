@@ -36,8 +36,8 @@ export class PaymentService {
       // Create valid metadata structure required by the backend DB validation
       const validMetadata = {
         transaction_details: {
-          processor_response: `pending_${Date.now()}`,
-          authorization_code: `pending_${Date.now()}`
+          processor_response: 'pending_' + Date.now(),
+          authorization_code: 'pending_' + Date.now()
         },
         payment_method: {
           type: "square",
@@ -56,6 +56,8 @@ export class PaymentService {
       };
       
       console.debug("[PaymentService] Using referenceId in payment request:", paymentDetails.referenceId);
+      console.debug("[PaymentService] paymentDetails.season:", paymentDetails.season);
+      console.debug("[PaymentService] Full paymentDetails object:", paymentDetails);
       // Create request payload - match the backend's expected format
       const payload = {
         sourceId,
@@ -81,7 +83,7 @@ export class PaymentService {
       
       for (const endpoint of possibleEndpoints) {
         try {
-          console.log(`Trying payment endpoint: ${endpoint}`);
+          console.log('Trying payment endpoint: ' + endpoint);
           response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -93,15 +95,15 @@ export class PaymentService {
           if (response.ok) {
             responseData = await response.json();
             endpointUsed = endpoint;
-            console.log(`Payment successful with endpoint: ${endpoint}`, responseData);
+            console.log('Payment successful with endpoint: ' + endpoint, responseData);
             break;
           } else {
             // Log the error response for debugging
             const errorText = await response.text();
-            console.error(`Error response from ${endpoint}:`, errorText);
+            console.error('Error response from ' + endpoint + ':', errorText);
           }
         } catch (endpointError) {
-          console.error(`Error with endpoint ${endpoint}:`, endpointError);
+          console.error('Error with endpoint ' + endpoint + ':', endpointError);
         }
       }
       
@@ -141,8 +143,8 @@ export class PaymentService {
     // Create valid metadata structure required by the backend DB validation
     const metadata = {
       transaction_details: {
-        processor_response: `pending_${Date.now()}`,
-        authorization_code: `pending_${Date.now()}`
+        processor_response: 'pending_' + Date.now(),
+        authorization_code: 'pending_' + Date.now()
       },
       payment_method: {
         type: "square",
@@ -192,8 +194,8 @@ export class PaymentService {
     
     const metadata = {
       transaction_details: {
-        processor_response: payment.id || `completed_${Date.now()}`,
-        authorization_code: payment.id || `auth_${Date.now()}`
+        processor_response: payment.id || 'completed_' + Date.now(),
+        authorization_code: payment.id || 'auth_' + Date.now()
       },
       payment_method: {
         type: payment.card_details?.card?.brand?.toLowerCase() || "square",
@@ -261,7 +263,7 @@ export class PaymentService {
         if (newError) {
           console.error('Error creating new payment record:', newError);
         }
-      }
+      };
       
       return data;
     } catch (err) {
@@ -306,7 +308,7 @@ export class PaymentService {
         .from(table)
         .update({
           payment_status: 'paid',
-          status: 'confirmed',
+          status: 'approved',
           updated_at: new Date().toISOString()
         })
         .eq('id', existingReg.id);
@@ -315,15 +317,25 @@ export class PaymentService {
         console.error('Error updating registration:', updateError);
       }
     } else {
+      // Extract season from metadata or default to 1
+      let seasonNumber = 1;
+      if (paymentDetails.metadata) {
+        seasonNumber = paymentDetails.metadata.season
+          || paymentDetails.metadata.changeRequestData?.season
+          || paymentDetails.metadata.changeRequestData?.metadata?.season
+          || 1;
+      }
+
       // Create new registration
       const { error: insertError } = await supabase
         .from(table)
         .insert({
           team_id: paymentDetails.teamId,
           [idField]: paymentDetails.eventId,
-          status: 'confirmed',
+          status: 'pending', // Use allowed status value
           payment_status: 'paid',
-          registration_date: new Date().toISOString()
+          registration_date: new Date().toISOString(),
+          season: seasonNumber
         });
       
       if (insertError) {
@@ -378,7 +390,7 @@ export class PaymentService {
       payment: {
         id: mockId,
         status: 'COMPLETED',
-        receiptUrl: `https://example.com/receipts/${mockId}`,
+        receiptUrl: 'https://example.com/receipts/' + mockId,
         amount: paymentDetails.amount,
         currency: 'USD',
         created_at: new Date().toISOString(),
@@ -431,7 +443,7 @@ export class PaymentService {
   // Add team rebrand endpoint if it doesn't exist
   async createPendingTeamRebrand(requestData: any): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/team/rebrand`, {
+      const response = await fetch(API_BASE_URL + '/api/team/rebrand', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -442,7 +454,7 @@ export class PaymentService {
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         console.error('Error creating team rebrand request:', errorData);
-        throw new Error(errorData?.detail || `Failed to create team rebrand request: ${response.status}`);
+        throw new Error(errorData?.detail || 'Failed to create team rebrand request: ' + response.status);
       }
 
       return await response.json();

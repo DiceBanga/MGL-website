@@ -299,18 +299,104 @@ export class SquarePaymentService {
           console.error('Exception updating tournament registration:', regUpdateError);
         }
       } else if (paymentDetails.type === 'league' && paymentDetails.eventId && paymentDetails.teamId) {
+        console.debug("[SquarePaymentService] paymentDetails.season:", paymentDetails.season);
+
+        // Try to get season from paymentDetails.metadata
+        let seasonNumber = 1;
+        if (paymentDetails.metadata) {
+          seasonNumber = paymentDetails.metadata.season
+            || paymentDetails.metadata.custom_data?.season
+            || paymentDetails.metadata.changeRequestData?.season
+            || paymentDetails.metadata.changeRequestData?.metadata?.season
+            || 1;
+          console.debug("[SquarePaymentService] Extracted season from metadata:", seasonNumber);
+        }
+
+        if (paymentDetails.eventId) {
+          const { data: leagueData, error: leagueError } = await supabase
+            .from('leagues')
+            .select('season, current_season')
+            .eq('id', paymentDetails.eventId)
+            .maybeSingle();
+
+          if (leagueError) {
+            console.error("Error fetching league season:", leagueError);
+          } else if (leagueData) {
+            seasonNumber = leagueData.season || leagueData.current_season || 1;
+            console.debug("[SquarePaymentService] Fetched season from leagues table:", seasonNumber);
+          }
+        }
+
+        console.debug("[SquarePaymentService] Upserting league registration with data:", {
+          league_id: paymentDetails.eventId,
+          team_id: paymentDetails.teamId,
+          status: 'approved',
+          payment_status: 'paid',
+          season: seasonNumber || 1
+        });
+
         try {
-          const { error: regError } = await supabase
+          // Always fetch the season from leagues table before insert/update
+          let seasonNumber = 1;
+
+          if (paymentDetails.eventId) {
+            const { data: leagueData, error: leagueError } = await supabase
+              .from('leagues')
+              .select('season, current_season')
+              .eq('id', paymentDetails.eventId)
+              .maybeSingle();
+
+            if (leagueError) {
+              console.error("Error fetching league season:", leagueError);
+            } else if (leagueData) {
+              seasonNumber = leagueData.season || leagueData.current_season || 1;
+              console.debug("[SquarePaymentService] Fetched season from leagues table:", seasonNumber);
+            }
+          }
+
+          const { data: existing, error: fetchError } = await supabase
             .from('league_registrations')
-            .update({ 
-              status: 'approved',
-              payment_status: 'paid'
-            })
+            .select('id')
             .eq('league_id', paymentDetails.eventId)
-            .eq('team_id', paymentDetails.teamId);
-            
-          if (regError) {
-            console.error('Error updating league registration:', regError);
+            .eq('team_id', paymentDetails.teamId)
+            .maybeSingle();
+
+          if (fetchError) {
+            console.error("Error checking existing league registration:", fetchError);
+          }
+
+          if (existing) {
+            const { error: updateError } = await supabase
+              .from('league_registrations')
+              .update({
+                status: 'approved',
+                payment_status: 'paid',
+                season: seasonNumber
+              })
+              .eq('id', existing.id);
+            if (updateError) {
+              console.error("Error updating league registration:", updateError);
+            }
+          } else {
+            const { error: insertError } = await supabase
+              .from('league_registrations')
+              .insert({
+                league_id: paymentDetails.eventId,
+                team_id: paymentDetails.teamId,
+                status: 'approved',
+                payment_status: 'paid',
+                season: seasonNumber
+              });
+            if (insertError) {
+              console.error("Error inserting league registration:", insertError);
+              console.debug("[SquarePaymentService] Data used for insert error:", {
+                league_id: paymentDetails.eventId,
+                team_id: paymentDetails.teamId,
+                status: 'approved',
+                payment_status: 'paid',
+                season: seasonNumber
+              });
+            }
           }
         } catch (regUpdateError) {
           console.error('Exception updating league registration:', regUpdateError);
@@ -375,7 +461,7 @@ export class SquarePaymentService {
             return;
           }
           
-          // Skip creating a team change request here, as it's already created in the Payments component
+          /* Skip creating a team change request here, as it's already created in the Payments component */
           
           // 2. Directly update the team captain and roles
           console.log('Updating team captain directly...');

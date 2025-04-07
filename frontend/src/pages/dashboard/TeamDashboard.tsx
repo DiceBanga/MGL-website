@@ -298,7 +298,8 @@ const TeamDashboard = () => {
           item_id: itemId, // Use the specific item ID
           playersIds: selectedPlayerIds, // Pass selected players
           request_id: requestId, // Crucial for linking payment and request
-          referenceId: referenceId // Use the generated reference ID
+          referenceId: referenceId, // Use the generated reference ID
+          season: selectedEventDetails?.season || selectedEventDetails?.current_season || 1 // Pass season number
         } as any
       );
 
@@ -310,6 +311,9 @@ const TeamDashboard = () => {
         eventName: eventName,
         teamName: team.name,
         playerIds: selectedPlayerIds, // Ensure player IDs are here
+        season: selectedEventDetails?.season || selectedEventDetails?.current_season || 1, // Explicitly include season
+        requestId: requestId, // Explicitly include requestId
+        teamId: team.id, // Explicitly include teamId
         // Nested data specifically for the change request record itself
         changeRequestData: {
           teamId: team.id,
@@ -323,7 +327,8 @@ const TeamDashboard = () => {
             eventName: eventName,
             teamName: team.name,
             playerIds: selectedPlayerIds,
-            requestId: requestId // Redundant but ensures it's present
+            requestId: requestId, // Redundant but ensures it's present
+            season: selectedEventDetails?.season || selectedEventDetails?.current_season || 1 // Also include inside nested metadata
           }
         }
       };
