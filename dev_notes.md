@@ -1,6 +1,6 @@
 # Developer Notes: Payment & Request Handling System
 
-This document outlines the architecture and flow of the payment processing, request handling, and webhook systems in the MGL platform, with the team transfer process as the reference implementation.
+This document outlines the architecture and flow of the payment processing, request handling, and webhook systems in the MGL platform, referencing recent updates for league and tournament registrations.
 
 ## System Architecture Overview
 
@@ -23,52 +23,92 @@ This document outlines the architecture and flow of the payment processing, requ
 
 ### Purpose:
 
-Handles payment processing for all monetized actions including team transfers, tournament registrations, and roster changes.
+Handles payment processing for all monetized actions including team transfers, league/tournament registrations, roster changes, etc.
 
 ### Implementation:
 
 - Located in: `frontend/src/services/PaymentService.ts`
 - Core methods:
-  - `processSquarePayment`: Processes payments through Square
-  - `createPendingPaymentRecord`: Creates initial payment record in database
-  - `recordPaymentInDatabase`: Updates payment record after successful payment
+  - `processSquarePayment`: Processes payments through Square.
+  - `createPendingPaymentRecord`: Creates initial payment record in database.
+  - `recordPaymentInDatabase`: Updates payment record after successful payment.
+- Utilities:
+  - `createPaymentDetails` (`frontend/src/utils/paymentUtils.ts`): Creates standardized payment object.
+  - `generateReferenceId` (`frontend/src/utils/paymentUtils.ts`): Generates Square-compliant reference IDs.
 
 ### Payment Flow:
 
-1. User initiates action that requires payment
-2. `createPaymentDetails` utility creates payment object with proper metadata
-3. Payment details include:
-   - Action-specific data (e.g., team ID, player ID)
-   - Reference ID (format: `itemId-requestUUID`)
-   - Metadata with information for creating change request
-4. Create pending payment record in database
-5. Process payment through Square integration
-6. Update payment record with success/failure information
+1. User initiates action requiring payment (e.g., League Registration).
+2. Frontend fetches necessary data (e.g., league details, item price, 4-digit `item_id`).
+3. `createPaymentDetails` utility creates `PaymentDetails` object.
+4. Payment details include:
+   - Action-specific data (e.g., `teamId`, `eventId`, `playerIds` array).
+   - `changeRequestType` (e.g., `'league_registration'`).
+   - `referenceId` (format: `item_id-requestUUID`, see below).
+   - `metadata` containing `changeRequestData` needed for creating the `team_change_requests` record.
+5. Frontend navigates to `/payments` page with `PaymentDetails` in state.
+6. `Payments.tsx` handles payment method selection (Square/CashApp).
+7. For Square:
+   - `PaymentForm` tokenizes card details.
+   - `handleSquarePayment` triggers confirmation.
+   - `confirmSquarePayment` calls `PaymentService.processSquarePayment`.
+8. `PaymentService.processSquarePayment`:
+   - Creates pending payment record in `payments` table.
+   - Calls backend `/api/payments` endpoint to process payment with Square.
+   - Updates payment record status.
+   - **Crucially, calls `createTeamChangeRequest`** (in `Payments.tsx`) upon successful payment, passing the `paymentId` and original `paymentDetails`.
+9. `createTeamChangeRequest` inserts a record into `team_change_requests` with status `'processing'`.
+10. Database trigger `handle_request_status_update` executes the action (e.g., updates registration status, transfers team).
 
-### Metadata Structure:
+### Metadata Structure (Example: League Registration):
 
 ```javascript
-{
-  "transaction_details": {
-    "processor_response": "...",
-    "authorization_code": "..."
-  },
-  "payment_method": {
-    "type": "square",
-    "last_four": "0000"
-  },
-  "team_id": "a59c214f-e020-46c2-9fa5-6648f0f5a841",
-  "event_type": "team_transfer",
-  "request_id": "90354d17-3868-4761-bcc8-9a14078d699a",
-  "custom_data": {
-    // Action-specific data
-    "oldCaptainName": "owner@militagamingleague.com",
-    "newCaptainName": "Dice",
-    "teamName": "ChickyPoos",
-    "requestId": "90354d17-3868-4761-bcc8-9a14078d699a"
+// Passed in state to /payments
+const paymentDetails: PaymentDetails = {
+  id: "paymentUUID", // Generated UUID for payment
+  type: "league", // General type
+  changeRequestType: "league_registration", // Specific type for change request
+  name: "League Registration for We Da Best",
+  amount: 100,
+  description: "Team: ChickyPoos, Event: We Da Best",
+  teamId: "teamUUID",
+  eventId: "leagueUUID", // League ID
+  captainId: "captainUUID",
+  playersIds: ["player1UUID", "player2UUID", ...], // Array of selected players
+  request_id: "requestUUID", // Pre-generated UUID for the request
+  referenceId: "1004-requestUUIDNoHyphens", // Square reference ID
+  item_id: "1004", // 4-digit item code
+  metadata: {
+    requestType: "league_registration", // Redundant but kept for potential use
+    eventName: "We Da Best",
+    teamName: "ChickyPoos",
+    playerIds: ["player1UUID", "player2UUID", ...],
+    season: 1, // Actual season number for leagues
+    requestId: "requestUUID",
+    teamId: "teamUUID",
+    leagueId: "leagueUUID",
+    changeRequestData: { // Data needed to create the team_change_requests record
+      teamId: "teamUUID",
+      requestedBy: "captainUUID",
+      itemId: "1004", // 4-digit item code
+      leagueId: "leagueUUID",
+      oldValue: "", // Or relevant old value for other request types
+      newValue: "leagueUUID", // Or relevant new value
+      requestId: "requestUUID",
+      playerId: ["player1UUID", "player2UUID", ...], // Array of player UUIDs
+      metadata: { // Nested metadata for the change request itself
+        eventName: "We Da Best",
+        teamName: "ChickyPoos",
+        playerIds: ["player1UUID", "player2UUID", ...],
+        requestId: "requestUUID",
+        season: 1
+      }
+    }
   }
-}
+};
 ```
+
+_Note: For Tournament Registration, `type` is `"tournament"`, `changeRequestType` is `"tournament_registration"`, `eventId` is the `tournamentId`, and `season` defaults to `0`._
 
 ## Item IDs for Payment Reference
 
@@ -82,7 +122,7 @@ Handles payment processing for all monetized actions including team transfers, t
 | Team Rebrand            | 1006    |
 | Online ID Change        | 1007    |
 
-Use these `item_id` values in the `reference_id` generation for payment requests.
+Use these **4-digit string `item_id`** values in the `reference_id` generation.
 
 ## Reference ID Format
 
@@ -98,61 +138,69 @@ Example:
 1003-b8f7d0f2edca44c3bd1fb0a5765b3a2c
 ```
 
-- The `item_id` is the **numeric string** from the `items` table (e.g., `'1003'` for Tournament Registration).
+- The `item_id` is the **4-digit string** from the `items` table (e.g., `'1003'` for Tournament Registration).
 - The `request_id` is a UUID with hyphens removed (32 characters).
-- Total length is about 37 characters, compliant with Square's 40-character limit.
+- Total length is 37 characters, compliant with Square's 40-character limit.
 
-This format is used for **all payment types** to ensure consistency and avoid Square API errors.
+This format is used for **all payment types** to ensure consistency and avoid Square API errors. The `generateReferenceId` utility handles this.
 
 ## 2. Request Service
 
 ### Purpose:
 
-Manages requests for actions that require approval, validation, or payment, including team transfers, league registrations, and tournament registrations.
+Manages requests for actions that require approval, validation, or payment, including team transfers, league/tournament registrations, etc. Now unified through the `team_change_requests` table.
 
 ### Implementation:
 
-- Core tables:
-  - `team_change_requests`: Stores requests for team-related changes
-  - Other request tables for specific actions
+- Core table:
+  - `team_change_requests`: Stores requests for **all** team-related changes.
 - Key components:
-  - `createTeamChangeRequest`: Creates request records
-  - `handle_request_status_update`: Database trigger function that executes actions
+  - `createTeamChangeRequest` (in `Payments.tsx`): Creates request records after successful payment.
+  - `handle_request_status_update`: Database trigger function that executes actions based on `request_type`.
 
 ### Request Flow:
 
-1. User initiates action through UI
-2. System creates payment details (if applicable)
-3. After successful payment, system creates request with status 'processing'
-4. Database trigger activates on status change to 'processing'
-5. Trigger function executes the appropriate action based on request type
-6. Request status updated to 'completed' or 'failed' based on execution result
+1. User initiates action through UI.
+2. Frontend prepares `PaymentDetails` including `changeRequestType` and `changeRequestData`.
+3. Payment is processed via `PaymentService`.
+4. **Upon successful payment**, `PaymentService` calls `createTeamChangeRequest`.
+5. `createTeamChangeRequest` inserts a record into `team_change_requests` with:
+   - `request_type` (e.g., `'league_registration'`, `'tournament_registration'`, `'team_transfer'`).
+   - `player_id` (as `uuid[]` array).
+   - `status` set to `'processing'`.
+   - Other relevant data (`team_id`, `league_id`, `tournament_id`, `old_value`, `new_value`, `metadata`).
+6. Database trigger `handle_request_status_update` activates on status change to `'processing'`.
+7. Trigger function executes the appropriate action based on `request_type`.
+8. Request status updated to `'completed'` or `'failed'` based on execution result.
 
 ### Status Lifecycle:
 
-- `pending`: Initial state, waiting for payment or approval
-- `processing`: Payment completed, request is being executed
-- `completed`: Request successfully executed
-- `failed`: Request execution failed
-- `rejected`: Request was rejected by administrator
+- `pending`: (Less used now) Initial state, waiting for payment or approval.
+- `processing`: Payment completed, request is being executed by the trigger.
+- `completed`: Request successfully executed.
+- `failed`: Request execution failed (check `last_error` field).
+- `rejected`: Request was rejected by an administrator (manual process).
 
-### Request Creation (Team Transfer Example):
+### Request Creation (`createTeamChangeRequest` in `Payments.tsx`):
 
 ```javascript
+// Simplified example inside createTeamChangeRequest
 const { data, error } = await supabase
   .from("team_change_requests")
   .insert({
-    id: requestId,
-    team_id: teamId,
-    request_type: "team_transfer",
-    requested_by: requestedBy,
-    player_id: playerId,
-    old_value: oldValue,
-    new_value: newValue,
-    status: "processing", // Important: Set to 'processing' to trigger immediate execution
-    payment_reference: paymentId,
-    item_id: formattedItemId,
-    metadata: cleanMetadata,
+    id: requestId, // Generated UUID for the request
+    team_id: changeRequestData.teamId,
+    request_type: changeRequestType, // e.g., 'league_registration'
+    requested_by: changeRequestData.requestedBy,
+    player_id: changeRequestData.playerId, // Array of UUIDs
+    old_value: changeRequestData.oldValue,
+    new_value: changeRequestData.newValue,
+    status: "processing", // Trigger execution
+    payment_reference: paymentId, // Link to payment record
+    item_id: changeRequestData.itemId, // 4-digit item code
+    league_id: changeRequestData.leagueId, // If applicable
+    tournament_id: changeRequestData.tournamentId, // If applicable
+    metadata: changeRequestData.metadata, // Nested metadata
   })
   .select()
   .single();
@@ -162,205 +210,95 @@ const { data, error } = await supabase
 
 ### Purpose:
 
-Handles asynchronous payment notifications from Square and updates request statuses accordingly.
+Handles asynchronous payment notifications (e.g., from CashApp, potentially future methods) and updates request statuses accordingly. _Note: Currently less critical for Square as processing is synchronous._
 
 ### Implementation:
 
-- Located in: `backend/routes/webhooks.py` and database trigger functions
+- Located in: `backend/routes/webhooks.py` and potentially database trigger functions.
 - Core methods:
-  - `handle_square_webhook`: Processes webhook notifications from Square
-  - `process_request_update`: Updates request status based on payment status
+  - `handle_square_webhook` (or other provider webhooks).
+  - Logic to find associated request based on payment ID/reference.
+  - Updates request status (e.g., to `'processing'` upon payment confirmation).
 
-### Webhook Flow:
+### Webhook Flow (Conceptual):
 
-1. Square sends webhook notification when payment status changes
-2. Webhook handler extracts payment ID and determines associated request
-3. Updates request status based on payment outcome
-4. For successful payments, sets request status to 'processing'
-5. Database trigger executes the appropriate action based on request type
-
-### Database Trigger Implementation:
-
-```sql
-CREATE OR REPLACE FUNCTION public.handle_request_status_update()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $function$
-declare
-  new_captain_id uuid;
-  old_captain_id uuid;
-begin
-  -- Only handle team transfers in 'processing' state
-  IF NEW.request_type = 'team_transfer' AND NEW.status = 'processing' THEN
-    -- Get the captain IDs
-    SELECT id INTO old_captain_id
-    FROM auth.users
-    WHERE email = NEW.metadata->>'oldCaptainName';
-
-    SELECT user_id INTO new_captain_id
-    FROM public.players
-    WHERE display_name = NEW.metadata->>'newCaptainName';
-
-    -- Call the transfer function directly
-    PERFORM admin_transfer_team_ownership(
-      NEW.team_id,
-      new_captain_id,
-      old_captain_id
-    );
-
-    -- Update request status to completed
-    UPDATE team_change_requests
-    SET
-      status = 'completed',
-      processed_at = NOW(),
-      updated_at = NOW(),
-      metadata = jsonb_set(
-        metadata,
-        '{action_result}',
-        jsonb_build_object(
-          'success', true,
-          'message', 'Team ownership transferred successfully',
-          'team_id', NEW.team_id,
-          'old_captain_id', old_captain_id,
-          'new_captain_id', new_captain_id
-        )
-      )
-    WHERE id = NEW.id;
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-```
+1. Payment provider sends webhook notification (e.g., payment completed).
+2. Webhook handler verifies and processes the notification.
+3. Extracts payment identifier and finds the corresponding `payment` record.
+4. Finds the associated `team_change_requests` record via `request_id` or `payment_reference`.
+5. Updates the request status (e.g., to `'processing'`).
+6. Database trigger `handle_request_status_update` executes the action.
 
 ## 4. Implementation Guidelines for Consistency
 
 ### For New Request Types:
 
-1. **UI Component Structure**:
+1.  **Define `item_id`**: Add the new action to the `items` table and note its 4-digit `item_id`.
+2.  **UI Component**:
+    - Use `TeamActionProcessor` or similar structure.
+    - Gather necessary inputs.
+    - Implement confirmation steps.
+3.  **Payment Details Creation**:
+    - Call `createPaymentDetails` utility.
+    - Provide the correct `changeRequestType` string.
+    - Include all necessary data within `metadata` and `metadata.changeRequestData`.
+    - Ensure the correct 4-digit `item_id` is passed.
+    - Use `generateReferenceId` for the `referenceId`.
+4.  **Database Trigger**:
+    - Update `handle_request_status_update` trigger function in Supabase.
+    - Add a new `IF NEW.request_type = 'your_new_type' AND NEW.status = 'processing' THEN ... END IF;` block.
+    - Implement the logic to execute the action (e.g., call an RPC function, update tables).
+    - Update the request status to `'completed'` or `'failed'` with appropriate `metadata` logging.
 
-   - Use `TeamActionProcessor` component as a template for action flows
-   - Implement two-step confirmation for all paid actions
-   - Display clear feedback on action status
+## 5. Key Recent Fixes & Considerations
 
-2. **Payment Details Creation**:
+- **`item_id` vs `id`**: Always use the **4-digit string `item_id`** from the `items` table when referring to items in payment details, reference IDs, and change requests. The UUID `id` is the primary key but not the business identifier.
+- **`player_id` Array**: The `team_change_requests.player_id` column is now `uuid[]`. Ensure an array of player UUIDs is always passed, even if only one player is involved.
+- **`season` Field**: Include a `season` field in `metadata` and `metadata.changeRequestData` for consistency. Use the actual season for leagues and `0` for tournaments.
+- **`reference_id` Length**: The format `{item_id}-{request_id_no_hyphens}` ensures compliance with Square's 40-character limit.
+- **Unified Flow**: All paid actions should now follow the flow: Initiate -> Create Payment Details -> Process Payment -> Create Change Request -> Trigger Execution.
 
-   - Use the `createPaymentDetails` utility function
-   - Include all necessary metadata for request creation
-   - Follow standard reference ID format: `itemId-requestUUID`
-
-3. **Request Creation**:
-
-   - Set status to 'processing' immediately after successful payment
-   - Include complete metadata needed for action execution
-   - Use consistent field naming across different request types
-
-4. **Database Trigger Implementation**:
-   - Add specific handling for each request type
-   - Include comprehensive error handling
-   - Update request with detailed result information
-
-### Tournament Registration Implementation:
-
-```javascript
-// Example implementation for tournament registration
-const paymentDetails = createPaymentDetails(
-  "tournament_registration",
-  "Tournament Registration",
-  registrationFee,
-  `Register ${team.name} for ${tournament.name}`,
-  {
-    teamId: team.id,
-    captainId: user.id,
-    item_id: itemId,
-    request_id: requestId,
-    tournamentId: tournament.id,
-    playersIds: selectedPlayers,
-  }
-);
-
-// Add metadata for the tournament registration request
-paymentDetails.metadata = {
-  requestType: "tournament_registration",
-  tournamentId: tournament.id,
-  tournamentName: tournament.name,
-  teamId: team.id,
-  teamName: team.name,
-  requestId: requestId,
-  playerIds: selectedPlayers,
-  changeRequestData: {
-    teamId: team.id,
-    requestedBy: user.id,
-    itemId: itemId,
-    tournamentId: tournament.id,
-    oldValue: "",
-    newValue: tournament.id,
-    requestId: requestId,
-    metadata: {
-      tournamentName: tournament.name,
-      teamName: team.name,
-      playerIds: selectedPlayers,
-      requestId: requestId,
-    },
-  },
-};
-```
-
-## 5. Debugging and Troubleshooting
+## 6. Debugging and Troubleshooting
 
 ### Common Issues:
 
-1. **Payment Processing Errors**:
-
-   - Check payment metadata structure
-   - Verify Square API keys and environment settings
-   - Examine webhook logs for payment status
-
-2. **Request Execution Failures**:
-
-   - Check database triggers are correctly registered
-   - Verify metadata contains required fields
-   - Look for error messages in request.last_error field
-
-3. **Missing Request IDs**:
-   - Ensure payment references and request IDs match
-   - Verify reference ID format is consistent
-   - Check if payment record was successfully created
+1.  **Payment Processing Errors**:
+    - Check `reference_id` format and length.
+    - Verify `item_id` is the 4-digit code.
+    - Check payment `metadata` structure against `PaymentDetails` type.
+    - Verify Square API keys and environment.
+2.  **Request Execution Failures**:
+    - Check `team_change_requests` record: Is `status` 'processing'? Is `request_type` correct? Does `metadata` contain required fields?
+    - Check database trigger `handle_request_status_update`: Does it handle the specific `request_type`? Are there SQL errors in the trigger logic?
+    - Look for error messages in `team_change_requests.last_error` field.
+3.  **Incorrect Data**:
+    - Verify the correct `item_id` (4-digit) is being fetched and passed.
+    - Ensure `player_id` is passed as an array `uuid[]`.
+    - Check that `season` is included correctly (actual or `0`).
 
 ### Logging Best Practices:
 
-- Log detailed information at each step of the process
-- Include request IDs in all log messages for traceability
-- Log payments with sensitive data redacted
-- Log both successful and failed operations
+- Log detailed `PaymentDetails` object before navigating to `/payments`.
+- Log `paymentId` and `changeRequestData` inside `createTeamChangeRequest`.
+- Add detailed logging within the `handle_request_status_update` trigger function for each request type branch.
+- Include request IDs and payment IDs in logs.
 
-## 6. Testing the Payment & Request Flow
+## 7. Testing the Payment & Request Flow
 
-1. **Unit Testing**:
-
-   - Mock Square payment responses
-   - Test request creation with various metadata formats
-   - Verify trigger functions with simulated status changes
-
-2. **Integration Testing**:
-
-   - Test full payment flow with Square sandbox
-   - Verify webhook handling with simulated notifications
-   - Test database triggers with real data
-
-3. **Manual Testing Checklist**:
-   - Successful payment completes request
-   - Failed payment correctly updates request status
-   - Request execution properly updates status
-   - Error states are properly handled and displayed
-   - Payments can be reconciled with requests
-
-## 7. CI/CD Considerations
-
-- Run unit tests on every PR
-- Test database migrations in staging environment
-- Validate webhook handling in isolated test environment
-- Version payment and request schemas for backward compatibility
-- Test payment flows with Square sandbox in CI pipeline
-- Monitor payment success rates and request completion rates
+1.  **Unit Testing**:
+    - Test `createPaymentDetails` and `generateReferenceId` utilities.
+    - Mock Square payment responses.
+    - Test `createTeamChangeRequest` logic.
+2.  **Integration Testing**:
+    - Test full payment flow with Square sandbox.
+    - Verify `team_change_requests` record creation.
+    - Test database trigger execution for each `request_type`.
+3.  **Manual Testing Checklist**:
+    - Test League Registration.
+    - Test Tournament Registration.
+    - Test Team Transfer.
+    - Test Roster Change, Rebrand, Online ID Change.
+    - Verify successful payment creates request and executes action.
+    - Verify failed payment does not create request.
+    - Verify trigger errors update request status to 'failed' with error details.
+    - Check `payments` and `team_change_requests` tables for correct data.
